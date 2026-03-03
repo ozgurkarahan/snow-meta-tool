@@ -1,5 +1,7 @@
 # ServiceNow MCP Meta-Tool
 
+> **Work in Progress** -- The MCP server (3 tools) is implemented and smoke-tested. Still missing: APIM OBO policy, IaC (Bicep), CI/CD pipeline. See [Project Status](#project-status) for details.
+
 MCP server exposing ServiceNow as 3 generic tools (`discover`, `query`, `write`) with JWT Bearer identity propagation. Same architecture as `salesforce-meta-tool-id-prop` — an AI agent discovers tables and fields at runtime, then queries and writes records as the authenticated user.
 
 ## Architecture
@@ -52,7 +54,7 @@ Agent (Claude)
 | Record query | `query(table="incident", fields="number,short_description,priority", limit=3)` | PASS -- 68 incidents returned with display_value + value |
 | Text search | `query(table="incident", text_search="password")` | PASS |
 | Aggregate | `query(table="incident", aggregate=True, group_by="priority")` | PASS -- 5 priority groups with counts |
-| Create record | `write(table="incident", operation="create", ...)` | PASS -- INC0010003, `sys_created_by = jwt.test` |
+| Create record | `write(table="incident", operation="create", ...)` | PASS -- identity propagation confirmed (`sys_created_by` = test user) |
 | Update record | `write(table="incident", operation="update", ...)` | PASS -- short_description updated |
 | Delete record | `write(table="incident", operation="delete", ...)` | 403 -- expected, `itil` role lacks delete ACL |
 

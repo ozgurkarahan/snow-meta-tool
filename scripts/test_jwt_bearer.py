@@ -30,6 +30,7 @@ import argparse
 import base64
 import datetime
 import json
+import os
 import sys
 import time
 import uuid
@@ -238,8 +239,8 @@ def ensure_test_user(client: httpx.Client) -> dict:
 
     Note: ServiceNow blocks JWT Bearer tokens for users with admin role.
     """
-    test_email = "jwt.test@snow-meta-tool.dev"
-    test_username = "jwt.test"
+    test_email = os.environ.get("SN_TEST_EMAIL", "jwt.test@example.com")
+    test_username = os.environ.get("SN_TEST_USERNAME", "jwt.test")
 
     r = client.get(
         "/api/now/table/sys_user",
@@ -265,7 +266,7 @@ def ensure_test_user(client: httpx.Client) -> dict:
             "last_name": "Test",
             "active": "true",
             "locked_out": "false",
-            "user_password": "Test1234!",
+            "user_password": os.environ.get("SN_TEST_PASSWORD", "ChangeMe1234!"),
         },
     )
     r.raise_for_status()
@@ -414,7 +415,7 @@ def test_table_api(instance_url: str, access_token: str) -> dict:
     r2 = httpx.get(
         f"{instance_url}/api/now/table/sys_user",
         headers=headers,
-        params={"sysparm_query": "user_name=jwt.test", "sysparm_fields": "user_name,email,name", "sysparm_limit": "1"},
+        params={"sysparm_query": f"user_name={os.environ.get('SN_TEST_USERNAME', 'jwt.test')}", "sysparm_fields": "user_name,email,name", "sysparm_limit": "1"},
         timeout=30,
     )
     if r2.status_code == 200 and r2.json().get("result"):
