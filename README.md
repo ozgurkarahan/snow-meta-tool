@@ -1,12 +1,10 @@
-<p align="center">
-  <img src="https://img.shields.io/badge/MCP-Streamable_HTTP-blue?style=for-the-badge" alt="MCP">
-  <img src="https://img.shields.io/badge/ServiceNow-Table_API-6DB33F?style=for-the-badge" alt="ServiceNow">
-  <img src="https://img.shields.io/badge/Azure-APIM_OBO-0078D4?style=for-the-badge" alt="Azure APIM">
-  <img src="https://img.shields.io/badge/Python-3.12+-3776AB?style=for-the-badge&logo=python&logoColor=white" alt="Python">
-  <img src="https://img.shields.io/badge/License-MIT-green?style=for-the-badge" alt="License">
-</p>
+# ServiceNow MCP Meta-Tool
 
-# 🔧 ServiceNow MCP Meta-Tool
+[![MCP](https://img.shields.io/badge/MCP-Streamable_HTTP-blue.svg)](https://modelcontextprotocol.io/)
+[![ServiceNow](https://img.shields.io/badge/ServiceNow-Table_API-6DB33F.svg)](https://developer.servicenow.com/)
+[![Azure APIM](https://img.shields.io/badge/Azure-APIM_OBO-0078D4.svg)](https://learn.microsoft.com/azure/api-management/)
+[![Python 3.12+](https://img.shields.io/badge/Python-3.12+-blue.svg)](https://www.python.org/)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 
 MCP server exposing ServiceNow as **3 generic tools** (`discover`, `query`, `write`) with **per-user identity propagation**. An AI agent discovers tables and fields at runtime, then queries and writes records **as the authenticated user** — no service account, no shared credentials.
 
