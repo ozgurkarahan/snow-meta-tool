@@ -47,7 +47,8 @@ curl /health           # Container App health check
 | `infra/modules/` | Container App, APIM API, APIM cert, Foundry connection |
 | `infra/policies/sn-mcp-obo-policy.xml` | APIM OBO token exchange policy |
 | `infra/policies/sn-mcp-obo-prm-policy.xml` | RFC 9728 Protected Resource Metadata |
-| `hooks/postprovision.py` | Post-deploy: cert upload, APIM binding, Foundry connection |
+| `hooks/postprovision.py` | Post-deploy: cert upload, APIM binding, Foundry connection, agent + app creation |
+| `hooks/requirements.txt` | Python dependencies for postprovision hook (azure-ai-projects, azure-identity) |
 | `scripts/test_jwt_bearer.py` | Automated SN instance setup + JWT Bearer test |
 
 ## Environment Variables
@@ -74,7 +75,7 @@ azd env set SN_JWT_BEARER_KID "<kid>"
 azd up
 ```
 
-Post-provision hook automatically: uploads PFX to Key Vault, creates APIM cert binding, updates Named Values, creates Foundry connection.
+Post-provision hook automatically: uploads PFX to Key Vault, creates APIM cert binding, updates Named Values, creates Foundry connection, creates `servicenow-assistant` agent with MCP + Memory tools, and provisions Agent Application.
 
 ## Key Constraints
 
