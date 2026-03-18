@@ -566,6 +566,15 @@ ServiceNow uses encoded query strings (not SQL):
 - Use sys_id (32-char hex) for updates and deletes.
 - For approvals: write(table="sysapproval_approver", operation="update", \
 field_values={"state":"approved"})
+
+## Error recovery
+- If discover(table=...) fails due to permissions (403), you may still attempt the write \
+using well-known standard fields (short_description, priority, state, category, \
+assignment_group, assigned_to, description, urgency, impact). The write tool will let \
+the Table API validate field names.
+- If discover returns fields but some choices are skipped (choices_skipped in response), \
+proceed normally -- field metadata is still complete, only picklist values are partial.
+- On INVALID_FIELD from a write: the error includes the valid field list. Fix and retry.
 """
 
     # Retry with backoff -- after fresh deploy, the Foundry data plane

@@ -204,11 +204,23 @@ async def discover(
                 or f.get("internal_type", "") in ("choice", "integer")
             ]
             choices = {}
+            skipped = []
             for field_name in choice_fields[:20]:  # Cap at 20 to avoid excessive calls
-                vals = await sn.get_choices(table, field_name)
-                if vals:
-                    choices[field_name] = vals
+                try:
+                    vals = await sn.get_choices(table, field_name)
+                    if vals:
+                        choices[field_name] = vals
+                except httpx.HTTPStatusError as choice_err:
+                    if choice_err.response.status_code in (401, 403):
+                        log.warning("discover: sys_choice %d for %s.%s -- skipping",
+                                    choice_err.response.status_code, table, field_name)
+                        skipped.append(field_name)
+                    else:
+                        raise
             result["choices"] = choices
+            if skipped:
+                result["choices_skipped"] = skipped
+                result["choices_note"] = "Some choice fields were inaccessible (403). Field metadata is still complete."
 
         log.info("tool=discover mode=describe fields=%d elapsed=%.1fs", len(fields), time.monotonic() - t0)
         return json.dumps(result)
@@ -392,11 +404,13 @@ async def write(
                     valid_field_names = {f.get("element", "") for f in schema_fields}
                     invalid = set(field_values.keys()) - valid_field_names
                     if invalid:
-                        return json.dumps({
-                            "success": False,
-                            "error": f"Invalid field names: {', '.join(sorted(invalid))}. "
-                                     f"Call discover(table=\"{table}\") to see valid field names.",
-                        })
+                        # Schema may be partial due to row-level ACLs (200 with
+                        # filtered results) -- log warning but let Table API validate
+                        log.warning(
+                            "write: field validation found unrecognized fields %s for %s "
+                            "(may be ACL-filtered schema -- skipping validation)",
+                            sorted(invalid), table,
+                        )
             except httpx.HTTPStatusError as schema_err:
                 if schema_err.response.status_code == 403:
                     log.info("write: sys_dictionary 403, skipping field validation for %s", table)
