@@ -32,7 +32,7 @@ from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.requests import Request
 from starlette.responses import JSONResponse
 
-from servicenow_client import ServiceNowClient, _request_token
+from servicenow_client import ServiceNowClient, _request_token, _request_user_email
 
 log = logging.getLogger("servicenow_mcp")
 
@@ -43,6 +43,10 @@ port = int(os.environ.get("PORT", "8000"))
 
 @asynccontextmanager
 async def lifespan(app):
+    # Recreate httpx client on startup -- Container App revision updates trigger
+    # ASGI shutdown (closing the client) then restart, but the module-level
+    # singleton persists in Python's module cache with a closed client.
+    sn._client = httpx.AsyncClient(timeout=30.0)
     yield
     await sn.close()
 
@@ -417,20 +421,26 @@ async def write(
 
 
 class BearerTokenMiddleware(BaseHTTPMiddleware):
-    """Extract Authorization: Bearer token and set it as the per-request context var.
+    """Extract Authorization: Bearer token and X-User-Email header as per-request context vars.
 
     When a bearer token is present (e.g., from APIM), the ServiceNowClient uses
     it directly without retry/refresh. When absent (local dev), the existing
     self-managed JWT Bearer flow kicks in unchanged.
+
+    X-User-Email is injected by the APIM OBO policy from the Azure AD
+    preferred_username claim. Stored for future whoami tool.
     """
 
     async def dispatch(self, request: Request, call_next):
         auth = request.headers.get("authorization", "")
         token = auth[7:] if auth.lower().startswith("bearer ") else None
+        email = request.headers.get("x-user-email")
         tok = _request_token.set(token)
+        em = _request_user_email.set(email)
         try:
             return await call_next(request)
         finally:
+            _request_user_email.reset(em)
             _request_token.reset(tok)
 
 

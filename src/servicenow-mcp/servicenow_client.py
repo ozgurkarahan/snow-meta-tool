@@ -16,6 +16,11 @@ _request_token: contextvars.ContextVar[str | None] = contextvars.ContextVar(
     "_request_token", default=None
 )
 
+# Per-request user email for identity tracking (set by middleware from X-User-Email header).
+_request_user_email: contextvars.ContextVar[str | None] = contextvars.ContextVar(
+    "_request_user_email", default=None
+)
+
 
 class ServiceNowClient:
     """Async ServiceNow REST API client.

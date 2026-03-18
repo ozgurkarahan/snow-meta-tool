@@ -1,0 +1,190 @@
+<policies>
+    <inbound>
+        <base />
+        <set-header name="X-Request-ID" exists-action="skip">
+            <value>@(context.RequestId.ToString())</value>
+        </set-header>
+
+        <!-- ================================================================
+             Phase 0: Validate Azure AD token
+             ================================================================ -->
+        <validate-jwt header-name="Authorization"
+            failed-validation-httpcode="401"
+            failed-validation-error-message="Invalid Azure AD token"
+            require-scheme="Bearer"
+            output-token-variable-name="jwt">
+            <openid-config url="https://login.microsoftonline.com/{{TenantId}}/v2.0/.well-known/openid-configuration" />
+            <audiences>
+                <audience>https://ai.azure.com</audience>
+            </audiences>
+            <!-- Accept both v1 (sts.windows.net) and v2 (login.microsoftonline.com) issuers. -->
+            <issuers>
+                <issuer>https://login.microsoftonline.com/{{TenantId}}/v2.0</issuer>
+                <issuer>https://sts.windows.net/{{TenantId}}/</issuer>
+            </issuers>
+        </validate-jwt>
+
+        <!-- Extract user email: v2 tokens use preferred_username, v1 tokens use upn.
+             ServiceNow user_field=email means we can use this directly as JWT sub.
+             No service account lookup needed (unlike Salesforce OBO flow). -->
+        <set-variable name="aadEmail" value="@{
+            var jwt = (Jwt)context.Variables["jwt"];
+            var email = jwt.Claims.GetValueOrDefault("preferred_username", "");
+            if (string.IsNullOrEmpty(email)) {
+                email = jwt.Claims.GetValueOrDefault("upn", "");
+            }
+            if (string.IsNullOrEmpty(email)) {
+                email = jwt.Claims.GetValueOrDefault("unique_name", "");
+            }
+            return email;
+        }" />
+
+        <choose>
+            <when condition="@(string.IsNullOrEmpty((string)context.Variables["aadEmail"]))">
+                <return-response>
+                    <set-status code="403" reason="Missing Email Claim" />
+                    <set-header name="Content-Type" exists-action="override">
+                        <value>application/json</value>
+                    </set-header>
+                    <set-body>@{
+                        return JsonConvert.SerializeObject(new {
+                            error = "missing_email_claim",
+                            message = "Azure AD token does not contain preferred_username claim. Ensure the user has a UPN set."
+                        });
+                    }</set-body>
+                </return-response>
+            </when>
+        </choose>
+
+        <!-- ================================================================
+             Phase 1: Get SN user token via JWT Bearer (cached per email)
+             ServiceNow user_field=email allows direct mapping from Azure AD
+             preferred_username; no intermediate user lookup required.
+             ================================================================ -->
+        <cache-lookup-value key="@("sn-token-" + (string)context.Variables["aadEmail"])" variable-name="cachedSnToken" />
+
+        <choose>
+            <when condition="@(!context.Variables.ContainsKey("cachedSnToken") || string.IsNullOrEmpty((string)context.Variables["cachedSnToken"]))">
+                <!-- Create JWT Bearer assertion for the target user.
+                     SN requires kid in header and jti in payload (unlike SF). -->
+                <set-variable name="jwtHeader" value="@{
+                    return Convert.ToBase64String(Encoding.UTF8.GetBytes(JsonConvert.SerializeObject(new {
+                        alg = "RS256",
+                        typ = "JWT",
+                        kid = "{{SnJwtBearerKid}}"
+                    }))).TrimEnd('=').Replace('+', '-').Replace('/', '_');
+                }" />
+                <set-variable name="jwtPayload" value="@{
+                    var now = DateTimeOffset.UtcNow;
+                    var payload = new {
+                        iss = "{{SnOboClientId}}",
+                        sub = (string)context.Variables["aadEmail"],
+                        aud = "{{SnOboClientId}}",
+                        iat = now.ToUnixTimeSeconds(),
+                        exp = now.AddSeconds(300).ToUnixTimeSeconds(),
+                        jti = Guid.NewGuid().ToString()
+                    };
+                    return Convert.ToBase64String(Encoding.UTF8.GetBytes(JsonConvert.SerializeObject(payload))).TrimEnd('=').Replace('+', '-').Replace('/', '_');
+                }" />
+                <set-variable name="jwtAssertion" value="@{
+                    var header = (string)context.Variables["jwtHeader"];
+                    var payload = (string)context.Variables["jwtPayload"];
+                    var signingInput = header + "." + payload;
+                    var cert = context.Deployment.Certificates["{{SnJwtBearerCertThumbprint}}"];
+                    using (var rsa = cert.GetRSAPrivateKey()) {
+                        var signature = rsa.SignData(Encoding.UTF8.GetBytes(signingInput), HashAlgorithmName.SHA256, RSASignaturePadding.Pkcs1);
+                        return signingInput + "." + Convert.ToBase64String(signature).TrimEnd('=').Replace('+', '-').Replace('/', '_');
+                    }
+                }" />
+
+                <!-- Exchange for SN user token -->
+                <send-request mode="new" response-variable-name="snTokenResponse" timeout="30">
+                    <set-url>{{SnOboInstanceUrl}}/oauth_token.do</set-url>
+                    <set-method>POST</set-method>
+                    <set-header name="Content-Type" exists-action="override">
+                        <value>application/x-www-form-urlencoded</value>
+                    </set-header>
+                    <set-body>@("grant_type=urn%3Aietf%3Aparams%3Aoauth%3Agrant-type%3Ajwt-bearer&client_id={{SnOboClientId}}&assertion=" + (string)context.Variables["jwtAssertion"])</set-body>
+                </send-request>
+
+                <choose>
+                    <when condition="@(((IResponse)context.Variables["snTokenResponse"]).StatusCode == 200)">
+                        <set-variable name="snAccessToken" value="@{
+                            var body = ((IResponse)context.Variables["snTokenResponse"]).Body.As<JObject>();
+                            return (string)body["access_token"];
+                        }" />
+                        <!-- Cache for 25 min (SN tokens expire at 30 min, 5 min safety margin) -->
+                        <cache-store-value key="@("sn-token-" + (string)context.Variables["aadEmail"])" value="@((string)context.Variables["snAccessToken"])" duration="1500" />
+                    </when>
+                    <otherwise>
+                        <return-response>
+                            <set-status code="502" reason="SN Token Exchange Failed" />
+                            <set-header name="Content-Type" exists-action="override">
+                                <value>application/json</value>
+                            </set-header>
+                            <set-body>@{
+                                var status = ((IResponse)context.Variables["snTokenResponse"]).StatusCode;
+                                var body = ((IResponse)context.Variables["snTokenResponse"]).Body.As<string>();
+                                return JsonConvert.SerializeObject(new {
+                                    error = "sn_token_exchange_failed",
+                                    message = "Failed to exchange Azure AD token for ServiceNow token via JWT Bearer flow",
+                                    sn_status = status,
+                                    sn_error = body,
+                                    aad_email = (string)context.Variables["aadEmail"]
+                                });
+                            }</set-body>
+                        </return-response>
+                    </otherwise>
+                </choose>
+            </when>
+            <otherwise>
+                <set-variable name="snAccessToken" value="@((string)context.Variables["cachedSnToken"])" />
+            </otherwise>
+        </choose>
+
+        <!-- ================================================================
+             Phase 2: Forward request with SN user token
+             ================================================================ -->
+        <set-header name="Authorization" exists-action="override">
+            <value>@("Bearer " + (string)context.Variables["snAccessToken"])</value>
+        </set-header>
+        <!-- Pass user email for future whoami tool -->
+        <set-header name="X-User-Email" exists-action="override">
+            <value>@((string)context.Variables["aadEmail"])</value>
+        </set-header>
+    </inbound>
+    <backend>
+        <!-- buffer-response=false is required for MCP Streamable HTTP.
+             Foundry's MCP client uses GET with Accept: text/event-stream
+             to receive tool results via SSE. Default buffering (true) causes
+             APIM to hold the entire SSE response before forwarding, which
+             the client interprets as a connection failure. -->
+        <forward-request buffer-response="false" />
+    </backend>
+    <outbound>
+        <base />
+    </outbound>
+    <on-error>
+        <base />
+        <choose>
+            <!-- Only handle SN backend 401s (token expired). Skip if validate-jwt
+                 failed: aadEmail won't exist, and the 401 should pass through as-is. -->
+            <when condition="@(context.Variables.ContainsKey("aadEmail") && context.Response != null && context.Response.StatusCode == 401)">
+                <cache-remove-value key="@("sn-token-" + (string)context.Variables["aadEmail"])" />
+                <return-response>
+                    <set-status code="401" reason="Unauthorized" />
+                    <set-header name="Content-Type" exists-action="override">
+                        <value>application/json</value>
+                    </set-header>
+                    <set-body>@{
+                        return JsonConvert.SerializeObject(new {
+                            error = "sn_token_expired",
+                            message = "ServiceNow token expired or revoked. Retrying will re-exchange automatically.",
+                            aad_email = context.Variables.ContainsKey("aadEmail") ? (string)context.Variables["aadEmail"] : "unknown"
+                        });
+                    }</set-body>
+                </return-response>
+            </when>
+        </choose>
+    </on-error>
+</policies>

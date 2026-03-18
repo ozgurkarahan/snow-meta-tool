@@ -1,0 +1,22 @@
+name: sn-mcp-tool
+metadata:
+  template: snow-meta-tool
+infra:
+  provider: bicep
+  path: infra
+  module: main
+  resourceGroup: rg-sf-mcp-obo
+services:
+  servicenow-mcp:
+    project: ./src/servicenow-mcp
+    language: docker
+    host: containerapp
+    docker:
+      path: ./Dockerfile
+      remoteBuild: true
+hooks:
+  postprovision:
+    shell: sh
+    run: hooks/postprovision.sh
+    continueOnError: true
+    interactive: true
