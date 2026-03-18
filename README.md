@@ -8,6 +8,15 @@
 
 MCP server exposing ServiceNow as **3 generic tools** (`discover`, `query`, `write`) with **per-user identity propagation**. An AI agent discovers tables and fields at runtime, then queries and writes records **as the authenticated user** — no service account, no shared credentials.
 
+> **Part of the Identity-Propagated MCP Meta-Tool series** — building enterprise-grade MCP tools where every action is traceable to the real user, not a service account. Each tool follows the same pattern: generic tools + runtime schema discovery + On-Behalf-Of identity flow through Azure APIM.
+>
+> | Tool | System | Status |
+> |---|---|---|
+> | [Salesforce Meta-Tool](https://github.com/ozgurkarahan/salesforce-meta-tool-identity-propagation) | Salesforce CRM | ✅ Production |
+> | **ServiceNow Meta-Tool** (this repo) | ServiceNow ITSM | ✅ Production |
+>
+> When both tools are connected to the same agent, it can work across CRM and ITSM in a single conversation — see [joint use cases](TEST_PROMPTS.md#-scenario-10-salesforce-crm--servicenow-itsm-joint-use-cases).
+
 ---
 
 ## 💡 Why a Meta-Tool?
