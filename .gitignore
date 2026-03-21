@@ -36,3 +36,6 @@ venv/
 
 # Tasks (internal session tracking)
 tasks/
+
+# Playwright MCP temp files
+.playwright-mcp/

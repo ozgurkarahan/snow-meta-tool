@@ -7,9 +7,16 @@ MCP server exposing ServiceNow as 3 generic tools (`discover`, `query`, `write`)
 ## Architecture
 
 ```
-Azure AD user -> APIM (validate token, JWT Bearer OBO exchange) -> Container App (FastMCP) -> ServiceNow Table API
+Browser Login (SAML SSO):
+  User -> ServiceNow Login -> "Use external login" -> Azure AD SAML
+    -> Azure AD authenticates -> SAML Response -> ServiceNow ACS
+    -> JIT: create/update sys_user -> Session established
+
+API Flow (MCP):
+  Azure AD user -> APIM (validate token, JWT Bearer OBO exchange) -> Container App (FastMCP) -> ServiceNow Table API
 ```
 
+- **SAML 2.0 SSO** enables browser-based login with JIT user provisioning (Azure AD Enterprise App)
 - **APIM OBO policy** exchanges Azure AD token for a per-user ServiceNow token via JWT Bearer (RS256, cached 25 min)
 - **FastMCP server** exposes 3 tools over MCP Streamable HTTP
 - **ServiceNow client** handles auth (passthrough or self-managed), caching, pagination
@@ -50,6 +57,7 @@ curl /health           # Container App health check
 | `hooks/postprovision.py` | Post-deploy: cert upload, APIM binding, Foundry connection, agent + app creation |
 | `hooks/requirements.txt` | Python dependencies for postprovision hook (azure-ai-projects, azure-identity) |
 | `scripts/test_jwt_bearer.py` | Automated SN instance setup + JWT Bearer test |
+| `scripts/setup_saml_sso.py` | SAML 2.0 SSO + JIT provisioning setup (Azure AD -> SN) |
 
 ## Environment Variables
 
@@ -79,6 +87,7 @@ Post-provision hook automatically: uploads PFX to Key Vault, creates APIM cert b
 
 ## Key Constraints
 
+- **SAML SSO** is browser-only; does not affect MCP API auth (JWT Bearer OBO via APIM)
 - ServiceNow **blocks JWT Bearer for admin users** -- always use non-admin accounts
 - `sys_dictionary` requires `personalize_dictionary` role -- server gracefully degrades without it
 - XML comments in APIM policies must not contain `--` (XML spec)
