@@ -55,62 +55,12 @@ mcp = FastMCP(
     "ServiceNow Meta Tool - MCP Server",
     lifespan=lifespan,
     instructions="""\
-ServiceNow MCP server -- dynamically discovers tables and fields via the ServiceNow Table API.
-
-## Recommended workflow
-1. **discover** -- Find the table name and its fields before querying or writing.
-   - discover(filter="incident") -> find tables matching "incident"
-   - discover(table="incident") -> get field metadata for the incident table
-   MUST call discover(table=...) before any write operation to learn valid field names.
-2. **query** -- Read records, search text, or aggregate stats.
-3. **write** -- Create, update, or delete records (including approvals).
-
-## Encoded query syntax
-ServiceNow uses encoded query strings (not SQL). Key operators:
-- Equals: field=value
-- Not equals: field!=value
-- Contains: fieldLIKEvalue
-- Starts with: fieldSTARTSWITHvalue
-- Greater than: field>value
-- Less than: field<value
-- In list: fieldINvalue1,value2,value3
-- Empty: fieldISEMPTY
-- Not empty: fieldISNOTEMPTY
-- AND (default): join with ^  (e.g., priority=1^state=2)
-- OR: join with ^OR  (e.g., priority=1^ORpriority=2)
-- Order: ^ORDERBYfield or ^ORDERBYDESCfield
-- Encoded queries are case-sensitive for operators but values are case-insensitive.
-
-Example: "priority=1^state!=6^assignment_groupLIKEnetwork^ORDERBYDESCsys_created_on"
-
-## Text search
-Use the query tool with text_search parameter for full-text keyword searches.
-Under the hood this uses ServiceNow's TEXTQUERY operator.
-
-## Approvals
-Approvals in ServiceNow are records in the `sysapproval_approver` table.
-- To find pending approvals: query(table="sysapproval_approver", query="state=requested")
-- To approve: write(table="sysapproval_approver", operation="update", sys_id="...", field_values={"state": "approved"})
-- To reject: write(table="sysapproval_approver", operation="update", sys_id="...", field_values={"state": "rejected"})
-
-## Important conventions
-- Table and field names are lowercase with underscores: incident, sys_created_on, short_description.
-- Record IDs (sys_id) are 32-character hex strings.
-- Reference fields return both value (sys_id) and display_value (human name) when queried.
-- Date/time format: "YYYY-MM-DD HH:MM:SS" in the instance timezone.
-- Always use the fields parameter to limit returned columns for performance.
-
-## Error handling
-- 403 = ACL restriction -- the user lacks permission for this table/record.
-- 404 = table or record not found -- verify the table name with discover.
-- Invalid field name = call discover(table=...) to see valid fields.
-- ServiceNow errors return {"error": {"message": "...", "detail": "..."}}.
-
-## Performance tips
-- Always specify fields parameter to avoid returning all columns.
-- Prefer STARTSWITH over LIKE for indexed performance.
-- Use aggregate mode (aggregate=True) for counts instead of fetching all records.
-- Limit result sets with the limit parameter.
+ServiceNow MCP server. Encoded query syntax: field=value (equals), fieldLIKEvalue (contains), \
+fieldSTARTSWITHvalue, field>value, field<value, fieldINval1,val2, fieldISEMPTY, fieldISNOTEMPTY. \
+AND: ^ | OR: ^OR | Order: ^ORDERBYfield / ^ORDERBYDESCfield. \
+Example: priority=1^state!=6^ORDERBYDESCsys_created_on. \
+Approvals: sysapproval_approver table (state=requested/approved/rejected). \
+Always specify fields param on query. Use aggregate=True for counts.
 """,
     host="0.0.0.0",
     port=port,
@@ -149,6 +99,7 @@ async def discover(
     filter: str | None = None,
     table: str | None = None,
     include_choices: bool = False,
+    mode: str = "compact",
 ) -> str:
     """Discover ServiceNow tables and field metadata.
 
@@ -167,11 +118,13 @@ async def discover(
         table: Table name to get field metadata for.
         include_choices: When True and table is provided, also fetch choice/picklist
             values for fields of type "choice" or "integer" with choices. Default False.
+        mode: Field detail level -- "compact" (default: element, type, mandatory, reference),
+            "names" (field names only), or "full" (all sys_dictionary attributes).
 
     Returns:
         JSON with either a list of tables or field metadata for the specified table.
     """
-    log.info("tool=discover filter=%s table=%s include_choices=%s", filter, table, include_choices)
+    log.info("tool=discover filter=%s table=%s include_choices=%s mode=%s", filter, table, include_choices, mode)
     t0 = time.monotonic()
 
     if not filter and not table:
@@ -184,32 +137,58 @@ async def discover(
         # Mode 1: table search
         if filter and not table:
             tables = await sn.list_tables(filter)
+            # Compact table results: strip link URLs
+            compact_tables = [
+                {k: v for k, v in t.items() if k != "super_class" or v}
+                for t in tables
+            ]
             log.info("tool=discover mode=list count=%d elapsed=%.1fs", len(tables), time.monotonic() - t0)
-            return json.dumps({"tables": tables, "count": len(tables)})
+            return json.dumps({"tables": compact_tables, "count": len(compact_tables)})
 
         # Mode 2: field metadata
-        fields = await sn.describe_fields(table)
+        raw_fields = await sn.describe_fields(table)
+
+        if mode == "names":
+            fields_out = [f.get("element", "") for f in raw_fields]
+        elif mode == "full":
+            fields_out = raw_fields
+        else:  # compact (default)
+            fields_out = sn.compact_fields(raw_fields)
 
         result = {
             "table": table,
-            "fields": fields,
-            "fieldCount": len(fields),
+            "fields": fields_out,
+            "fieldCount": len(raw_fields),
         }
 
         if include_choices:
             # Find choice-type fields and fetch their values
             choice_fields = [
-                f["element"] for f in fields
-                if f.get("internal_type", {}).get("value", "") in ("choice", "integer")
-                or f.get("internal_type", "") in ("choice", "integer")
+                f.get("element", "") if isinstance(f, dict) else f
+                for f in (raw_fields if mode != "names" else [])
+                if isinstance(f, dict) and (
+                    f.get("internal_type", {}).get("value", "") in ("choice", "integer")
+                    or f.get("internal_type", "") in ("choice", "integer")
+                )
             ]
+            # If mode=names, use raw_fields for choice detection
+            if mode == "names":
+                choice_fields = [
+                    f["element"] for f in raw_fields
+                    if f.get("internal_type", {}).get("value", "") in ("choice", "integer")
+                    or f.get("internal_type", "") in ("choice", "integer")
+                ]
             choices = {}
             skipped = []
             for field_name in choice_fields[:20]:  # Cap at 20 to avoid excessive calls
                 try:
                     vals = await sn.get_choices(table, field_name)
                     if vals:
-                        choices[field_name] = vals
+                        # Strip sequence from choice values
+                        choices[field_name] = [
+                            {"value": v.get("value", ""), "label": v.get("label", "")}
+                            for v in vals[:10]  # Cap at 10 values per field
+                        ]
                 except httpx.HTTPStatusError as choice_err:
                     if choice_err.response.status_code in (401, 403):
                         log.warning("discover: sys_choice %d for %s.%s -- skipping",
@@ -222,7 +201,7 @@ async def discover(
                 result["choices_skipped"] = skipped
                 result["choices_note"] = "Some choice fields were inaccessible (403). Field metadata is still complete."
 
-        log.info("tool=discover mode=describe fields=%d elapsed=%.1fs", len(fields), time.monotonic() - t0)
+        log.info("tool=discover mode=describe fields=%d elapsed=%.1fs", len(raw_fields), time.monotonic() - t0)
         return json.dumps(result)
 
     except httpx.HTTPStatusError as e:
@@ -234,9 +213,8 @@ async def query(
     table: str,
     query: str = "",
     fields: str = "",
-    limit: int = 50,
+    limit: int = 20,
     offset: int = 0,
-    max_records: int = 10000,
     text_search: str | None = None,
     search_field: str = "short_description",
     aggregate: bool = False,
@@ -248,28 +226,24 @@ async def query(
     """Query ServiceNow records, search text, or get aggregate statistics.
 
     Three modes:
-    1. Record query (default): Fetch records with encoded query filters and pagination.
+    1. Record query (default): Fetch records with encoded query filters.
        Example: query(table="incident", query="priority=1^state!=6", fields="number,short_description,priority", limit=10)
 
     2. Text search: Set text_search to search for keywords in a field.
        Example: query(table="incident", text_search="password reset", fields="number,short_description")
-       Uses ServiceNow's TEXTQUERY operator on search_field (default: short_description).
 
     3. Aggregate: Set aggregate=True for counts, averages, and sums by group.
        Example: query(table="incident", aggregate=True, group_by="priority")
-       Example: query(table="incident", aggregate=True, group_by="category", query="state=1")
 
-    Results include both sys_id (value) and display names (display_value) for reference fields.
-    Auto-paginates up to max_records (cap 50000).
+    IMPORTANT: Always specify the fields parameter to limit returned columns.
 
     Args:
         table: ServiceNow table name (e.g., "incident", "sc_req_item", "change_request").
         query: Encoded query string. See server instructions for syntax.
         fields: Comma-separated field names to return (e.g., "number,short_description,priority").
-            Always specify for performance -- omitting returns all columns.
-        limit: Records per page (default 50, max 10000 per page).
+            ALWAYS specify this -- omitting returns all columns and wastes tokens.
+        limit: Maximum total records to return (default 20, max 200).
         offset: Starting record offset for pagination.
-        max_records: Maximum total records to return across all pages (default 10000, cap 50000).
         text_search: Keywords to search for. Appended as TEXTQUERY to the query.
         search_field: Field to search in when using text_search (default "short_description").
         aggregate: Set True to use the Stats API instead of fetching records.
@@ -281,9 +255,11 @@ async def query(
     Returns:
         JSON with records array and totalCount, or aggregate statistics.
     """
-    log.info("tool=query table=%s aggregate=%s", table, aggregate)
+    log.info("tool=query table=%s aggregate=%s limit=%d", table, aggregate, limit)
     t0 = time.monotonic()
-    max_records = min(max_records, 50000)
+
+    # Cap total records to prevent runaway token usage
+    max_total = min(limit, 200)
 
     try:
         # Aggregate mode
@@ -305,19 +281,20 @@ async def query(
             tq = f"{search_field}123TEXTQUERY321{text_search}"
             final_query = f"{final_query}^{tq}" if final_query else tq
 
-        # Fetch first page
+        # Fetch records (paginate only up to max_total)
+        page_size = min(max_total, 100)
         records, total_count = await sn.query_records(
-            table, query=final_query, fields=fields, limit=limit, offset=offset
+            table, query=final_query, fields=fields, limit=page_size, offset=offset
         )
 
-        # Auto-paginate if more records available
+        # Auto-paginate only if user requested more than first page
         fetched = len(records)
-        current_offset = offset + limit
-        while fetched < total_count and fetched < max_records:
-            page_limit = min(limit, max_records - fetched)
+        current_offset = offset + page_size
+        while fetched < max_total and fetched < total_count:
+            next_page = min(page_size, max_total - fetched)
             page_records, _ = await sn.query_records(
                 table, query=final_query, fields=fields,
-                limit=page_limit, offset=current_offset
+                limit=next_page, offset=current_offset
             )
             if not page_records:
                 break
@@ -325,7 +302,7 @@ async def query(
             fetched += len(page_records)
             current_offset += len(page_records)
 
-        records = records[:max_records]
+        records = records[:max_total]
         log.info(
             "tool=query done total=%d returned=%d elapsed=%.1fs",
             total_count, len(records), time.monotonic() - t0,
@@ -334,7 +311,7 @@ async def query(
             "totalCount": total_count,
             "records": records,
             "returned": len(records),
-            "done": len(records) >= total_count or len(records) >= max_records,
+            "hasMore": total_count > len(records),
         })
 
     except httpx.HTTPStatusError as e:
@@ -419,10 +396,14 @@ async def write(
 
         if op == "create":
             record = await sn.create_record(table, field_values)
-            result = {"success": True, "sys_id": record.get("sys_id", ""), "record": record}
+            result = {
+                "success": True,
+                "sys_id": record.get("sys_id", ""),
+                "number": record.get("number", ""),
+            }
         elif op == "update":
             record = await sn.update_record(table, sys_id, field_values)
-            result = {"success": True, "record": record}
+            result = {"success": True, "sys_id": record.get("sys_id", sys_id)}
         else:  # delete
             await sn.delete_record(table, sys_id)
             result = {"success": True, "deleted": sys_id}

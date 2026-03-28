@@ -206,6 +206,40 @@ class ServiceNowClient:
         self._choice_cache[cache_key] = (now, result)
         return result
 
+    # --- Response Compaction ---
+
+    @staticmethod
+    def compact_fields(fields: list[dict]) -> list[dict]:
+        """Compact sys_dictionary field metadata to essential attributes only.
+
+        Strips link URLs from internal_type, removes read_only/active/default_value/max_length.
+        Returns: [{element, column_label, type, mandatory, reference}]
+        """
+        result = []
+        for f in fields:
+            # Flatten internal_type from {link, value} to plain string
+            itype = f.get("internal_type", "")
+            if isinstance(itype, dict):
+                itype = itype.get("value", "")
+            entry = {
+                "element": f.get("element", ""),
+                "column_label": f.get("column_label", ""),
+                "type": itype,
+                "mandatory": f.get("mandatory", "false"),
+            }
+            ref = f.get("reference", "")
+            if ref:
+                entry["reference"] = ref
+            result.append(entry)
+        return result
+
+    @staticmethod
+    def compact_record(record: dict, key_fields: set[str] | None = None) -> dict:
+        """Strip a write-response record to key identification fields only."""
+        if key_fields is None:
+            key_fields = {"sys_id", "number", "sys_class_name"}
+        return {k: v for k, v in record.items() if k in key_fields}
+
     # --- Record Operations ---
 
     async def query_records(
@@ -221,7 +255,7 @@ class ServiceNowClient:
             "sysparm_query": query,
             "sysparm_limit": str(limit),
             "sysparm_offset": str(offset),
-            "sysparm_display_value": "all",
+            "sysparm_display_value": "true",
             "sysparm_exclude_reference_link": "true",
             "sysparm_suppress_pagination_header": "false",
         }

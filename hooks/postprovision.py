@@ -530,7 +530,7 @@ def create_agent():
         memory_tool = MemorySearchTool(
             memory_store_name=store_name,
             scope="{{$userId}}",
-            update_delay=30,
+            update_delay=300,
         )
         tools.append(memory_tool)
         print(f"  MemorySearchTool added (store={store_name}, scope=per-user)")
@@ -547,11 +547,18 @@ choices can change.
 
 ## Workflow
 1. Plan -- tell the user what you intend to do before calling tools.
-2. discover(filter=...) -- find the table name.
-3. discover(table=...) -- get field metadata (REQUIRED before writes).
-4. query -- read records with encoded query syntax.
+2. If you already know the table name, skip discover(filter=...) and go straight to step 3.
+3. discover(table=...) -- get field metadata (REQUIRED before writes, optional for reads \
+if you know the fields from memory).
+4. query -- read records. ALWAYS specify the fields parameter.
 5. write -- create, update, or delete records.
 6. Summarize -- present results in plain language.
+
+## Token efficiency
+- ALWAYS pass fields= to query with only the columns the user needs.
+- Use discover(table=..., mode="names") if you only need field name validation.
+- Use discover(table=..., mode="compact") (default) for type/mandatory/reference info.
+- Skip discover(filter=...) if you already know the table name.
 
 ## Encoded query syntax
 ServiceNow uses encoded query strings (not SQL):
@@ -562,18 +569,15 @@ ServiceNow uses encoded query strings (not SQL):
 ## Rules
 - Do NOT guess field names -- use discover(table=...) first.
 - ALWAYS confirm with the user before create, update, or delete.
-- Always use the limit parameter unless the user requests all rows.
 - Use sys_id (32-char hex) for updates and deletes.
 - For approvals: write(table="sysapproval_approver", operation="update", \
 field_values={"state":"approved"})
 
 ## Error recovery
-- If discover(table=...) fails due to permissions (403), you may still attempt the write \
-using well-known standard fields (short_description, priority, state, category, \
-assignment_group, assigned_to, description, urgency, impact). The write tool will let \
-the Table API validate field names.
-- If discover returns fields but some choices are skipped (choices_skipped in response), \
-proceed normally -- field metadata is still complete, only picklist values are partial.
+- If discover(table=...) fails (403), you may attempt writes using well-known standard \
+fields (short_description, priority, state, category, assignment_group, assigned_to, \
+description, urgency, impact).
+- If discover returns choices_skipped, proceed normally -- field metadata is still complete.
 - On INVALID_FIELD from a write: the error includes the valid field list. Fix and retry.
 """
 
