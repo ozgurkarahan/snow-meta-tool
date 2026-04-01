@@ -54,8 +54,10 @@ curl /health           # Container App health check
 | `infra/modules/` | Container App, APIM API, APIM cert, Foundry connection |
 | `infra/policies/sn-mcp-obo-policy.xml` | APIM OBO token exchange policy |
 | `infra/policies/sn-mcp-obo-prm-policy.xml` | RFC 9728 Protected Resource Metadata |
-| `hooks/postprovision.py` | Post-deploy: cert upload, APIM binding, Foundry connection, agent + app creation |
+| `hooks/postprovision.py` | Post-deploy: cert, APIM, connection, agent, app, bot, Teams publish (8 steps) |
 | `hooks/requirements.txt` | Python dependencies for postprovision hook (azure-ai-projects, azure-identity) |
+| `assets/teams/` | Teams app icons (color.png 192x192, outline.png 32x32) |
+| `teams-app/` | Generated Teams app package (.zip with manifest + icons) |
 | `scripts/test_jwt_bearer.py` | Automated SN instance setup + JWT Bearer test |
 | `scripts/setup_saml_sso.py` | SAML 2.0 SSO + JIT provisioning setup (Azure AD -> SN) |
 
@@ -83,7 +85,7 @@ azd env set SN_JWT_BEARER_KID "<kid>"
 azd up
 ```
 
-Post-provision hook automatically: uploads PFX to Key Vault, creates APIM cert binding, updates Named Values, creates Foundry connection, creates `servicenow-assistant` agent with MCP + Memory tools, and provisions Agent Application.
+Post-provision hook automatically (8 steps): uploads PFX to Key Vault, creates APIM cert binding, updates Named Values, creates Foundry connection, creates `servicenow-assistant` agent with MCP + Memory tools, provisions Agent Application, creates Agent Deployment, bootstraps Bot Service + Teams/DirectLine channels, and publishes Teams app to org catalog (requires `AppCatalog.ReadWrite.All`).
 
 ## Key Constraints
 
