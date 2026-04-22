@@ -8,6 +8,12 @@
 
 MCP server exposing ServiceNow as **3 generic tools** (`discover`, `query`, `write`) with **per-user identity propagation**. An AI agent discovers tables and fields at runtime, then queries and writes records **as the authenticated user** — no service account, no shared credentials.
 
+## Architecture
+
+<img src="docs/diagrams/azure-architecture.png" alt="Azure Architecture — Identity-Propagated MCP Meta-Tools">
+
+> [draw.io source](docs/diagrams/azure-architecture.drawio)
+
 > **Part of the Identity-Propagated MCP Meta-Tool series** — building enterprise-grade MCP tools where every action is traceable to the real user, not a service account. Each tool follows the same pattern: generic tools + runtime schema discovery + On-Behalf-Of identity flow through Azure APIM.
 >
 > | Tool | System | Status |

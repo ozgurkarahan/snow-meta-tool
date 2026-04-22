@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+set -euo pipefail
 set -uo pipefail
 
 echo "=== Post-provision hook (ServiceNow MCP) ==="
@@ -17,4 +18,4 @@ fi
 
 # Run the post-provision script (non-fatal)
 echo "Running post-provision script..."
-python hooks/postprovision.py || echo "Post-provision script completed with warnings (see above)"
+python hooks/postprovision.py 

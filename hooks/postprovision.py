@@ -8,6 +8,27 @@ After Bicep deploys Azure resources, this hook:
 4. Creates Agent Application + Deployment for Activity Protocol endpoint
 """
 
+# FLEET_PATCH_V1
+# Auto-applied by fleet-preflight.py to make direct Python invocation work
+# outside the azd hook context (for the finalize-customer360 step).
+def _fleet_bootstrap_env():
+    import os, subprocess
+    if os.environ.get("AZURE_ENV_NAME"):
+        return
+    try:
+        out = subprocess.run(["azd", "env", "get-values"], capture_output=True,
+                             text=True, encoding="utf-8", errors="replace",
+                             timeout=30, check=False)
+        for line in (out.stdout or "").splitlines():
+            line = line.strip()
+            if not line or "=" not in line or line.startswith("#"):
+                continue
+            k, _, v = line.partition("=")
+            os.environ.setdefault(k.strip(), v.strip().strip('"').strip("'"))
+    except Exception:
+        pass
+_fleet_bootstrap_env()
+
 import json
 import os
 import subprocess
@@ -97,7 +118,7 @@ def upload_cert_and_configure_apim():
         print(f"  Certificate already in Key Vault (thumbprint: {thumbprint})")
     else:
         # Assign deployer Key Vault Certificates Officer role
-        deployer_oid = run('az ad signed-in-user show --query id -o tsv')
+        deployer_oid = run('az ad signed-in-user show --only-show-errors || az ad sp show --id "$(az account show --query user.name -o tsv)" --query id -o tsv')
         if not deployer_oid:
             print("  WARNING: Could not get deployer OID -- skipping cert upload")
             return
@@ -475,7 +496,7 @@ def create_agent():
     """Create a Foundry agent with the ServiceNow MCP tool using the v2 SDK.
 
     Uses the OBO connection (UserEntraToken) and the OBO APIM endpoint.
-    Includes MemorySearchTool for per-user conversational memory.
+    Includes MemorySearchPreviewTool for per-user conversational memory.
     Returns the agent version number (for use by create_agent_application).
     """
     project_endpoint = os.environ.get("AI_FOUNDRY_PROJECT_ENDPOINT")
@@ -502,7 +523,7 @@ def create_agent():
     from azure.identity import DefaultAzureCredential
     from azure.ai.projects import AIProjectClient
     from azure.ai.projects.models import (
-        PromptAgentDefinition, MCPTool, MemorySearchTool,
+        PromptAgentDefinition, MCPTool, MemorySearchPreviewTool,
     )
 
     credential = DefaultAzureCredential()
@@ -524,16 +545,16 @@ def create_agent():
     )
     tools = [sn_mcp_tool]
 
-    # Create memory store and add MemorySearchTool
+    # Create memory store and add MemorySearchPreviewTool
     store_name = create_memory_store(project_client)
     if store_name:
-        memory_tool = MemorySearchTool(
+        memory_tool = MemorySearchPreviewTool(
             memory_store_name=store_name,
             scope="{{$userId}}",
             update_delay=300,
         )
         tools.append(memory_tool)
-        print(f"  MemorySearchTool added (store={store_name}, scope=per-user)")
+        print(f"  MemorySearchPreviewTool added (store={store_name}, scope=per-user)")
 
     instructions = """\
 You are an assistant with access to ServiceNow via MCP tools.

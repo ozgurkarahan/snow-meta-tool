@@ -255,8 +255,13 @@ async def query(
     Returns:
         JSON with records array and totalCount, or aggregate statistics.
     """
-    log.info("tool=query table=%s aggregate=%s limit=%d", table, aggregate, limit)
+    log.info("tool=query table=%s aggregate=%s limit=%d fields=%s", table, aggregate, limit, fields or "(none)")
     t0 = time.monotonic()
+
+    # Default fields when agent omits them -- prevents returning all 100+ columns
+    if not fields and not aggregate:
+        fields = "sys_id,number,short_description,state,priority,assigned_to,sys_created_on"
+        log.warning("tool=query: no fields specified for %s, using defaults", table)
 
     # Cap total records to prevent runaway token usage
     max_total = min(limit, 200)

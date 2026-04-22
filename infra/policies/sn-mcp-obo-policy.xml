@@ -108,7 +108,13 @@
                 </send-request>
 
                 <choose>
-                    <when condition="@(((IResponse)context.Variables["snTokenResponse"]).StatusCode == 200)">
+                    <!-- Guard: SN returns 200 + HTML when hibernated; only parse JSON -->
+                    <when condition="@{
+                        var resp = (IResponse)context.Variables["snTokenResponse"];
+                        if (resp.StatusCode != 200) { return false; }
+                        var ct = resp.Headers.GetValueOrDefault("Content-Type", "");
+                        return ct.Contains("application/json");
+                    }">
                         <set-variable name="snAccessToken" value="@{
                             var body = ((IResponse)context.Variables["snTokenResponse"]).Body.As<JObject>();
                             return (string)body["access_token"];
@@ -123,13 +129,17 @@
                                 <value>application/json</value>
                             </set-header>
                             <set-body>@{
-                                var status = ((IResponse)context.Variables["snTokenResponse"]).StatusCode;
-                                var body = ((IResponse)context.Variables["snTokenResponse"]).Body.As<string>();
+                                var resp = (IResponse)context.Variables["snTokenResponse"];
+                                var status = resp.StatusCode;
+                                var body = resp.Body.As<string>();
+                                var isHibernating = status == 200 && body.Contains("hibernating");
                                 return JsonConvert.SerializeObject(new {
-                                    error = "sn_token_exchange_failed",
-                                    message = "Failed to exchange Azure AD token for ServiceNow token via JWT Bearer flow",
+                                    error = isHibernating ? "sn_instance_hibernating" : "sn_token_exchange_failed",
+                                    message = isHibernating
+                                        ? "ServiceNow dev instance is hibernating. Wake it at developer.servicenow.com before retrying."
+                                        : "Failed to exchange Azure AD token for ServiceNow token via JWT Bearer flow",
                                     sn_status = status,
-                                    sn_error = body,
+                                    sn_error = isHibernating ? "Instance hibernating (HTML returned instead of JSON)" : body,
                                     aad_email = (string)context.Variables["aadEmail"]
                                 });
                             }</set-body>

@@ -18,5 +18,5 @@ hooks:
   postprovision:
     shell: sh
     run: hooks/postprovision.sh
-    continueOnError: true
+    continueOnError: false
     interactive: true
