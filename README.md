@@ -330,6 +330,12 @@ ServiceNow uses encoded query strings (not SQL). Key operators:
 
 ---
 
+## 🔗 Related Projects
+
+- **[salesforce-meta-tool-identity-propagation](https://github.com/ozgurkarahan/salesforce-meta-tool-identity-propagation)** — The Salesforce counterpart: same meta-tool pattern and OBO identity propagation, applied to Salesforce CRM. Deploy both side-by-side to power a **Customer 360** AI Foundry agent that correlates Salesforce CRM data with ServiceNow incidents, changes, and requests under the user's own identity in each system.
+
+---
+
 ## 📄 License
 
 MIT
