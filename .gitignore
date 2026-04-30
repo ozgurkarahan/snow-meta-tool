@@ -39,3 +39,7 @@ tasks/
 
 # Playwright MCP temp files
 .playwright-mcp/
+
+# LinkedIn article assets (kept locally, not committed)
+article/
+
