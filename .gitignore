@@ -43,3 +43,7 @@ tasks/
 # LinkedIn article assets (kept locally, not committed)
 article/
 
+
+# Local-only assets (article sources, large media) — not committed
+.local/
+
