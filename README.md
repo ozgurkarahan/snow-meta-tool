@@ -22,6 +22,8 @@ MCP server exposing ServiceNow as **3 generic tools** (`discover`, `query`, `wri
 > | **ServiceNow Meta-Tool** (this repo) | ServiceNow ITSM | ✅ Production |
 >
 > When both tools are connected to the same agent, it can work across CRM and ITSM in a single conversation — see [joint use cases](TEST_PROMPTS.md#-scenario-10-salesforce-crm--servicenow-itsm-joint-use-cases).
+>
+> 📖 **Read the story:** [From Theory to Production: Salesforce Meta-Tool & Identity Propagation](https://www.linkedin.com/pulse/from-theory-production-salesforce-meta-tools-identity-ozgur-karahan-ch30e/) — no service accounts in the data path, every action traceable to a real user. Companion repo: [propagate-id-entra](https://github.com/ozgurkarahan/propagate-id-entra) — the end-to-end Entra ID identity-propagation pattern this series builds on.
 
 ---
 
