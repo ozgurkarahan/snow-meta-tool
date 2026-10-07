@@ -19,3 +19,12 @@ python ~/projects/memory/scripts/wiki-search.py <terms> --full   # + Summary
   in the category catalog resolved by Memory's `category_index_path`).
 - When you learn something durable about this project or client, ask the user to
   run `ingest` in the memory repo so it compounds for future sessions.
+
+## Deployment invariants (do not regress)
+
+- The Foundry connection is `servicenow-obo-oauth2` (authType **OAuth2** identity
+  passthrough). It is ensured create-only by `hooks/postprovision.py` -- never
+  delete/recreate it, and never reintroduce a UserEntraToken connection (Foundry
+  rejects Microsoft-audience tokens to custom MCP endpoints).
+- `azd provision` must not reset `ca-sn-mcp`: the image comes from
+  `SERVICE_SERVICENOW_MCP_IMAGE_NAME` via `infra/main.bicepparam`.

@@ -81,11 +81,18 @@ Payload: {
 ## Foundry Agent
 
 - Agent: `servicenow-assistant` v7 (gpt-5.4)
-- Tools: MCPTool (discover, query, write via `servicenow-obo` connection) + MemorySearchTool (project-memory, per-user scope)
+- Tools: MCPTool (discover, query, write via `servicenow-obo-oauth2` connection) + MemorySearchTool (project-memory, per-user scope)
 - Agent Application clientId: `4d7fd750-bf31-4c67-9e18-cea9d02fb205`
 - Agent Application ID: `6942944a-3b19-4ecb-96f7-e4a9cfd4fbb6`
 - Project endpoint: `https://aoai-sf-mcp-obo.services.ai.azure.com/api/projects/aiproj-sf-mcp-obo`
 - Shared Foundry project with `salesforce-assistant` agent
+
+### Foundry connection + provisioning invariants
+
+- Connection `servicenow-obo-oauth2`: authType **OAuth2** (identity passthrough), shared Entra app `MCP_OAUTH_CLIENT_ID` (same as SF), scopes `offline_access` + `api://<appId>/access_as_user`, target `https://apim-sf-mcp-obo.azure-api.net/servicenow-mcp-obo/mcp`. Token audience is `api://<appId>`, accepted by the APIM SN policy via the SF-owned Named Value `McpOauthClientId`.
+- NOT in Bicep. `hooks/postprovision.py::ensure_obo_connection()` is create-only (never deletes/overwrites), registers the connection redirect URI on the Entra app, and skips with a warning when `MCP_OAUTH_CLIENT_ID` / `MCP_OAUTH_CLIENT_SECRET` are missing.
+- Legacy `servicenow-obo` (UserEntraToken) is dead since 2026-05-22: Foundry returns "Cannot pass Microsoft token to untrusted MCP endpoint" for custom MCP endpoints.
+- `azd provision` keeps the live `ca-sn-mcp` image: `main.bicepparam` reads `SERVICE_SERVICENOW_MCP_IMAGE_NAME` into `servicenowMcpImageName` (helloworld placeholder only when empty).
 
 ## Continuous Evaluation (Foundry-native quality monitoring)
 
