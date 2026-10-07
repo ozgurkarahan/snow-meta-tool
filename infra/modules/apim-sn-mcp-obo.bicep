@@ -20,7 +20,7 @@ param snMcpFqdn string
 param snOboClientId string = 'placeholder-updated-by-hook'
 
 @description('ServiceNow instance URL for JWT Bearer token exchange')
-param snOboInstanceUrl string = 'https://dev300704.service-now.com'
+param snOboInstanceUrl string = 'https://dev434731.service-now.com'
 
 @description('Thumbprint of the SN JWT Bearer signing certificate in APIM')
 param snJwtBearerCertThumbprint string = ''

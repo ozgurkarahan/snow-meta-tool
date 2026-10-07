@@ -66,15 +66,16 @@ Payload: {
 
 ## Test Instance (Dev)
 
-- Instance: https://dev300704.service-now.com
-- OAuth Client ID: `2cf0c0cdc9e0468ea0675f2e9b5e6c06`
-- JWT kid: `9743419aa5b14834ab2dde854f0bae1a`
+- Instance: https://dev434731.service-now.com (since 2026-10-07; admin credential stored in `now-sdk auth` alias `dev434731`)
+- OAuth Client ID: `f42422554e284ef48bb8ca1418705799`
+- JWT kid: `f76a4af4137146ea9a3618c3b9a25666`
 - JWT Bearer cert thumbprint: `947043BB0892B46FDDADD410576A19C879F3E5CD` (same PFX as dev194081 — reused across PDI migrations)
 - Test users: `jwt.test@example.com` (user_name=jwt.test), `ozgurkarahan@MngEnvMCAP549101.onmicrosoft.com` (user_name=ozgurkarahan and full-UPN alias)
 - All test users have `itil` + `personalize_dictionary` roles
 - APIM cache key is versioned: `sn-token-{{SnOboInstanceUrl}}-<email>` — switching `SnOboInstanceUrl` automatically orphans cached tokens
 
 ### Previous instances (released back to PDI pool)
+- `dev300704` (lost by 2026-10-07: JWT ****** returned `access_denied` for every client; replaced by dev434731 — re-run `scripts/test_jwt_bearer.py` setup steps + seed `seed_demo_data.py --sn-only`, then update APIM Named Values `SnOboInstanceUrl`/`SnOboClientId`/`SnJwtBearerKid` and `ca-sn-mcp` `SN_INSTANCE_URL`)
 - `dev194081` (hibernated 2026-05-17, released when dev300704 was created)
 - `dev281447` (only ever a placeholder in bicep defaults)
 
@@ -114,9 +115,9 @@ Or in the Foundry portal → project → Evaluations → ContinuousEval-servicen
 
 **Known limitation**: passive — no traffic = no scores. First scores appear several minutes after the first agent response is logged in App Insights.
 
-## Hibernation Prevention (dev300704)
+## Hibernation Prevention (dev434731)
 
-PDIs auto-hibernate after ~10 days of inactivity. To keep dev300704 awake:
+PDIs auto-hibernate after ~10 days of inactivity. To keep dev434731 awake:
 
 - **Script**: `scripts/keepalive_ping.py` — signs a JWT Bearer assertion (using `certs/sn-jwt-bearer.key` + `certs/sn-oauth-config.json`), exchanges it at `/oauth_token.do`, then calls Table API. Counts as authenticated activity.
 - **Schedule**: Copilot CLI `manage_schedule` #1 — fires every 1 day, invokes the script. View/manage via `manage_schedule action=list|stop`.

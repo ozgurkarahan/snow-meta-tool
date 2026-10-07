@@ -19,7 +19,7 @@ param registryName string
 @description('Container Apps Environment resource ID')
 param containerAppsEnvironmentId string
 
-@description('ServiceNow instance URL (e.g., https://dev300704.service-now.com)')
+@description('ServiceNow instance URL (e.g., https://dev434731.service-now.com)')
 param snInstanceUrl string = ''
 
 @description('Application Insights connection string')
