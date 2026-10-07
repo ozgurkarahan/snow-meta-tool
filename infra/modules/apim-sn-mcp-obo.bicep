@@ -50,6 +50,14 @@ resource tenantIdNV 'Microsoft.ApiManagement/service/namedValues@2024-06-01-prev
   name: 'TenantId'
 }
 
+// McpOauthClientId (shared Entra app behind the OAuth2 identity-passthrough
+// connections) is owned by the SF deployment. The SN policy accepts
+// api://{{McpOauthClientId}} as a token audience for `servicenow-obo-oauth2`.
+resource mcpOauthClientIdNV 'Microsoft.ApiManagement/service/namedValues@2024-06-01-preview' existing = {
+  parent: apim
+  name: 'McpOauthClientId'
+}
+
 resource snOboClientIdNV 'Microsoft.ApiManagement/service/namedValues@2024-06-01-preview' = {
   parent: apim
   name: 'SnOboClientId'
@@ -141,6 +149,7 @@ resource snMcpOboApiPolicy 'Microsoft.ApiManagement/service/apis/policies@2024-0
   }
   dependsOn: [
     tenantIdNV
+    mcpOauthClientIdNV
     snOboClientIdNV
     snOboInstanceUrlNV
     snJwtBearerCertThumbprintNV

@@ -14,8 +14,13 @@
             require-scheme="Bearer"
             output-token-variable-name="jwt">
             <openid-config url="https://login.microsoftonline.com/{{TenantId}}/v2.0/.well-known/openid-configuration" />
+            <!-- https://ai.azure.com: legacy UserEntraToken tokens (kept for compatibility).
+                 api://{{McpOauthClientId}}: OAuth2 identity-passthrough tokens from the
+                 `servicenow-obo-oauth2` Foundry connection (the only working path since
+                 Foundry blocks Microsoft-audience tokens to custom MCP endpoints). -->
             <audiences>
                 <audience>https://ai.azure.com</audience>
+                <audience>api://{{McpOauthClientId}}</audience>
             </audiences>
             <!-- Accept both v1 (sts.windows.net) and v2 (login.microsoftonline.com) issuers. -->
             <issuers>

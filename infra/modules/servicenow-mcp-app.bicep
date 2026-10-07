@@ -25,6 +25,9 @@ param snInstanceUrl string = ''
 @description('Application Insights connection string')
 param appInsightsConnectionString string = ''
 
+@description('Container image to run. azd passes the currently deployed image (SERVICE_SERVICENOW_MCP_IMAGE_NAME) so a re-provision does not reset the live app. Empty = helloworld placeholder (first provision only).')
+param imageName string = ''
+
 // Look up registry to get admin credentials
 resource registry 'Microsoft.ContainerRegistry/registries@2023-11-01-preview' existing = {
   name: registryName
@@ -65,7 +68,7 @@ resource snMcpApp 'Microsoft.App/containerApps@2024-03-01' = {
       containers: [
         {
           name: 'servicenow-mcp'
-          image: 'mcr.microsoft.com/azuredocs/containerapps-helloworld:latest'
+          image: !empty(imageName) ? imageName : 'mcr.microsoft.com/azuredocs/containerapps-helloworld:latest'
           resources: {
             cpu: json('0.25')
             memory: '0.5Gi'

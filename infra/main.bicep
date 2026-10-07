@@ -51,6 +51,9 @@ param snJwtBearerCertName string = 'sn-jwt-bearer'
 @description('Thumbprint of the SN JWT Bearer signing certificate (for APIM policy cert lookup)')
 param snJwtBearerCertThumbprint string = ''
 
+@description('Currently deployed ServiceNow MCP image (azd SERVICE_SERVICENOW_MCP_IMAGE_NAME). Keeps azd provision from resetting ca-sn-mcp to the helloworld placeholder.')
+param servicenowMcpImageName string = ''
+
 // ============================================================================
 // Reference existing shared resources
 // ============================================================================
@@ -93,6 +96,7 @@ module snMcpApp 'modules/servicenow-mcp-app.bicep' = {
     containerAppsEnvironmentId: containerEnv.id
     snInstanceUrl: snInstanceUrl
     appInsightsConnectionString: appInsights.properties.ConnectionString
+    imageName: servicenowMcpImageName
   }
 }
 
@@ -126,17 +130,16 @@ module apimSnJwtBearerCert 'modules/apim-sn-jwt-bearer-cert.bicep' = if (!empty(
 }
 
 // ============================================================================
-// Tier 4: Foundry Connection (depends on APIM endpoint)
+// Foundry connection: NOT managed by Bicep.
+// `servicenow-obo-oauth2` (authType OAuth2, identity passthrough via the shared
+// Entra app MCP_OAUTH_CLIENT_ID) is ensured create-only by hooks/postprovision.py
+// because it carries a client secret and a per-connection redirect URI that must
+// be registered on the Entra app. UserEntraToken connections are rejected by
+// Foundry for custom MCP endpoints ("Cannot pass Microsoft token to untrusted
+// MCP endpoint") -- never reintroduce them.
 // ============================================================================
 
-module snOboConnection 'modules/sn-obo-connection.bicep' = {
-  name: 'sn-obo-connection'
-  params: {
-    cognitiveAccountName: cognitive.name
-    projectName: aiProjectName
-    snMcpOboEndpoint: apimSnMcpObo.outputs.snMcpOboEndpoint
-  }
-}
+var snOboConnectionName = 'servicenow-obo-oauth2'
 
 // ============================================================================
 // Outputs (become azd env vars)
@@ -144,7 +147,7 @@ module snOboConnection 'modules/sn-obo-connection.bicep' = {
 
 output SN_MCP_CONTAINER_APP_NAME string = snMcpApp.outputs.snMcpAppName
 output SN_MCP_FQDN string = snMcpApp.outputs.snMcpFqdn
-output SN_OBO_CONNECTION_NAME string = snOboConnection.outputs.connectionName
+output SN_OBO_CONNECTION_NAME string = snOboConnectionName
 output APIM_SN_MCP_OBO_ENDPOINT string = apimSnMcpObo.outputs.snMcpOboEndpoint
 output APIM_NAME string = apim.name
 output KEY_VAULT_NAME string = kv.name
