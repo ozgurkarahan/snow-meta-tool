@@ -36,7 +36,7 @@ param aiProjectName string
 param appInsightsName string
 
 // --- SN-specific parameters ---
-@description('ServiceNow instance URL (e.g., https://dev281447.service-now.com)')
+@description('ServiceNow instance URL (e.g., https://dev300704.service-now.com)')
 param snInstanceUrl string = ''
 
 @description('ServiceNow OAuth client ID (from oauth_jwt app)')
@@ -106,7 +106,7 @@ module apimSnMcpObo 'modules/apim-sn-mcp-obo.bicep' = {
     apimName: apim.name
     snMcpFqdn: snMcpApp.outputs.snMcpFqdn
     snOboClientId: snOboClientId
-    snOboInstanceUrl: !empty(snInstanceUrl) ? snInstanceUrl : 'https://dev281447.service-now.com'
+    snOboInstanceUrl: !empty(snInstanceUrl) ? snInstanceUrl : 'https://dev300704.service-now.com'
     snJwtBearerCertThumbprint: snJwtBearerCertThumbprint
     snJwtBearerKid: snJwtBearerKid
   }

@@ -16,6 +16,6 @@ python ~/projects/memory/scripts/wiki-search.py <terms> --full   # + Summary
 
 - Read the top matching page(s) in full before you answer.
 - Compact catalog / router: `~/projects/memory/index.md` (per-category summaries
-  in `~/projects/memory/wiki/{category}/_index.md`).
+  in the category catalog resolved by Memory's `category_index_path`).
 - When you learn something durable about this project or client, ask the user to
   run `ingest` in the memory repo so it compounds for future sessions.

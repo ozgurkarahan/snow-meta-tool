@@ -66,11 +66,17 @@ Payload: {
 
 ## Test Instance (Dev)
 
-- Instance: https://dev194081.service-now.com
-- OAuth Client ID: `d3d36c11036b4d1b94876ed27cbe81ae`
-- JWT kid: `82a6615d905f4b0f8b46e936fcb4f43c`
-- Test users: `jwt.test@snow-meta-tool.dev`, `ozgurkarahan@MngEnvMCAP549101.onmicrosoft.com`
-- Both users have itil + personalize_dictionary roles
+- Instance: https://dev300704.service-now.com
+- OAuth Client ID: `2cf0c0cdc9e0468ea0675f2e9b5e6c06`
+- JWT kid: `9743419aa5b14834ab2dde854f0bae1a`
+- JWT Bearer cert thumbprint: `947043BB0892B46FDDADD410576A19C879F3E5CD` (same PFX as dev194081 — reused across PDI migrations)
+- Test users: `jwt.test@example.com` (user_name=jwt.test), `ozgurkarahan@MngEnvMCAP549101.onmicrosoft.com` (user_name=ozgurkarahan and full-UPN alias)
+- All test users have `itil` + `personalize_dictionary` roles
+- APIM cache key is versioned: `sn-token-{{SnOboInstanceUrl}}-<email>` — switching `SnOboInstanceUrl` automatically orphans cached tokens
+
+### Previous instances (released back to PDI pool)
+- `dev194081` (hibernated 2026-05-17, released when dev300704 was created)
+- `dev281447` (only ever a placeholder in bicep defaults)
 
 ## Foundry Agent
 
@@ -80,6 +86,43 @@ Payload: {
 - Agent Application ID: `6942944a-3b19-4ecb-96f7-e4a9cfd4fbb6`
 - Project endpoint: `https://aoai-sf-mcp-obo.services.ai.azure.com/api/projects/aiproj-sf-mcp-obo`
 - Shared Foundry project with `salesforce-assistant` agent
+
+## Continuous Evaluation (Foundry-native quality monitoring)
+
+Enabled on `servicenow-assistant` in BOTH Foundry projects (2026-05-19). Passively scores every agent response.
+
+| Project | Eval config ID | Eval group ID |
+|---|---|---|
+| `aiproj-customer-360` | `continuous-eval-servicenow-assistant-fe87301ecf26422d9ca97f4111` | `eval_f5b96862dd634d8f8a96c7b744b7e65c` |
+| `aiproj-sf-mcp-obo`   | `continuous-eval-servicenow-assistant-cbb8aa4cdefd470db76d2d6d8e` | `eval_b38745a3f26749ccb6818ba3010e2d8f` |
+
+**Evaluators** (quality, no safety): `task_completion`, `tool_call_accuracy`, `response_completeness`.
+**Config**: `samplingRate=100`, `maxHourlyRuns=10`, `deploymentName=gpt-5.4`, `scenario=standard`, `enabled=true`.
+
+**Read scores** via Azure MCP `foundry`:
+```
+evaluation_get with isRequestForRuns=true + evalId
+```
+Or in the Foundry portal → project → Evaluations → ContinuousEval-servicenow-assistant-*
+
+**Known limitation**: passive — no traffic = no scores. First scores appear several minutes after the first agent response is logged in App Insights.
+
+## Hibernation Prevention (dev300704)
+
+PDIs auto-hibernate after ~10 days of inactivity. To keep dev300704 awake:
+
+- **Script**: `scripts/keepalive_ping.py` — signs a JWT Bearer assertion (using `certs/sn-jwt-bearer.key` + `certs/sn-oauth-config.json`), exchanges it at `/oauth_token.do`, then calls Table API. Counts as authenticated activity.
+- **Schedule**: Copilot CLI `manage_schedule` #1 — fires every 1 day, invokes the script. View/manage via `manage_schedule action=list|stop`.
+- **Why every 1d (not 5d)**: Copilot's `manage_schedule` caps interval at `1d`. Daily is well under the 10-day hibernation window, so it's a safe upper bound.
+- **Manual run**: `python scripts/keepalive_ping.py --quiet` from repo root.
+- **If the schedule lapses** (machine off for 10+ days): instance hibernates → must be woken via developer.servicenow.com.
+
+**Skipped evaluators (deliberate)**:
+- `groundedness` / `groundedness_pro` — agent grounds in live Table API results, not retrievable docs
+- `coherence` — gpt-5.4 saturates; low signal
+- All safety evaluators (`violence`, `self_harm`, `hate_unfairness`, `indirect_attack`, etc.) — internal SN admin queries, near-zero risk surface
+
+---
 
 ## Teams/Copilot Deployment
 
