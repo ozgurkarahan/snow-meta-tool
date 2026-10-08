@@ -21,3 +21,6 @@ param snOboClientId = readEnvironmentVariable('SN_OAUTH_CLIENT_ID', 'placeholder
 param snJwtBearerKid = readEnvironmentVariable('SN_JWT_BEARER_KID', '')
 param snJwtBearerCertName = readEnvironmentVariable('SN_JWT_BEARER_CERT_NAME', 'sn-jwt-bearer')
 param snJwtBearerCertThumbprint = readEnvironmentVariable('SN_JWT_BEARER_CERT_THUMBPRINT', '')
+
+// Preserve the live container image across `azd provision` (set by azd deploy)
+param servicenowMcpImageName = readEnvironmentVariable('SERVICE_SERVICENOW_MCP_IMAGE_NAME', '')

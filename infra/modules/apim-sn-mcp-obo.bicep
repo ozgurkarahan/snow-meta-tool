@@ -20,7 +20,7 @@ param snMcpFqdn string
 param snOboClientId string = 'placeholder-updated-by-hook'
 
 @description('ServiceNow instance URL for JWT Bearer token exchange')
-param snOboInstanceUrl string = 'https://dev281447.service-now.com'
+param snOboInstanceUrl string = 'https://dev434731.service-now.com'
 
 @description('Thumbprint of the SN JWT Bearer signing certificate in APIM')
 param snJwtBearerCertThumbprint string = ''
@@ -48,6 +48,14 @@ resource apimGatewayUrlNV 'Microsoft.ApiManagement/service/namedValues@2024-06-0
 resource tenantIdNV 'Microsoft.ApiManagement/service/namedValues@2024-06-01-preview' existing = {
   parent: apim
   name: 'TenantId'
+}
+
+// McpOauthClientId (shared Entra app behind the OAuth2 identity-passthrough
+// connections) is owned by the SF deployment. The SN policy accepts
+// api://{{McpOauthClientId}} as a token audience for `servicenow-obo-oauth2`.
+resource mcpOauthClientIdNV 'Microsoft.ApiManagement/service/namedValues@2024-06-01-preview' existing = {
+  parent: apim
+  name: 'McpOauthClientId'
 }
 
 resource snOboClientIdNV 'Microsoft.ApiManagement/service/namedValues@2024-06-01-preview' = {
@@ -141,6 +149,7 @@ resource snMcpOboApiPolicy 'Microsoft.ApiManagement/service/apis/policies@2024-0
   }
   dependsOn: [
     tenantIdNV
+    mcpOauthClientIdNV
     snOboClientIdNV
     snOboInstanceUrlNV
     snJwtBearerCertThumbprintNV

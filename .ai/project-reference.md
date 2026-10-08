@@ -66,20 +66,71 @@ Payload: {
 
 ## Test Instance (Dev)
 
-- Instance: https://dev194081.service-now.com
-- OAuth Client ID: `d3d36c11036b4d1b94876ed27cbe81ae`
-- JWT kid: `82a6615d905f4b0f8b46e936fcb4f43c`
-- Test users: `jwt.test@snow-meta-tool.dev`, `ozgurkarahan@MngEnvMCAP549101.onmicrosoft.com`
-- Both users have itil + personalize_dictionary roles
+- Instance: https://dev434731.service-now.com (since 2026-10-07; admin credential stored in `now-sdk auth` alias `dev434731`)
+- OAuth Client ID: `f42422554e284ef48bb8ca1418705799`
+- JWT kid: `f76a4af4137146ea9a3618c3b9a25666`
+- JWT Bearer cert thumbprint: `947043BB0892B46FDDADD410576A19C879F3E5CD` (same PFX as dev194081 — reused across PDI migrations)
+- Test users: `jwt.test@example.com` (user_name=jwt.test), `ozgurkarahan@MngEnvMCAP549101.onmicrosoft.com` (user_name=ozgurkarahan and full-UPN alias)
+- All test users have `itil` + `personalize_dictionary` roles
+- APIM cache key is versioned: `sn-token-{{SnOboInstanceUrl}}-<email>` — switching `SnOboInstanceUrl` automatically orphans cached tokens
+
+### Previous instances (released back to PDI pool)
+- `dev300704` (lost by 2026-10-07: JWT ****** returned `access_denied` for every client; replaced by dev434731 — re-run `scripts/test_jwt_bearer.py` setup steps + seed `seed_demo_data.py --sn-only`, then update APIM Named Values `SnOboInstanceUrl`/`SnOboClientId`/`SnJwtBearerKid` and `ca-sn-mcp` `SN_INSTANCE_URL`)
+- `dev194081` (hibernated 2026-05-17, released when dev300704 was created)
+- `dev281447` (only ever a placeholder in bicep defaults)
 
 ## Foundry Agent
 
 - Agent: `servicenow-assistant` v7 (gpt-5.4)
-- Tools: MCPTool (discover, query, write via `servicenow-obo` connection) + MemorySearchTool (project-memory, per-user scope)
+- Tools: MCPTool (discover, query, write via `servicenow-obo-oauth2` connection) + MemorySearchTool (project-memory, per-user scope)
 - Agent Application clientId: `4d7fd750-bf31-4c67-9e18-cea9d02fb205`
 - Agent Application ID: `6942944a-3b19-4ecb-96f7-e4a9cfd4fbb6`
 - Project endpoint: `https://aoai-sf-mcp-obo.services.ai.azure.com/api/projects/aiproj-sf-mcp-obo`
 - Shared Foundry project with `salesforce-assistant` agent
+
+### Foundry connection + provisioning invariants
+
+- Connection `servicenow-obo-oauth2`: authType **OAuth2** (identity passthrough), shared Entra app `MCP_OAUTH_CLIENT_ID` (same as SF), scopes `offline_access` + `api://<appId>/access_as_user`, target `https://apim-sf-mcp-obo.azure-api.net/servicenow-mcp-obo/mcp`. Token audience is `api://<appId>`, accepted by the APIM SN policy via the SF-owned Named Value `McpOauthClientId`.
+- NOT in Bicep. `hooks/postprovision.py::ensure_obo_connection()` is create-only (never deletes/overwrites), registers the connection redirect URI on the Entra app, and skips with a warning when `MCP_OAUTH_CLIENT_ID` / `MCP_OAUTH_CLIENT_SECRET` are missing.
+- Legacy `servicenow-obo` (UserEntraToken) is dead since 2026-05-22: Foundry returns "Cannot pass Microsoft token to untrusted MCP endpoint" for custom MCP endpoints.
+- `azd provision` keeps the live `ca-sn-mcp` image: `main.bicepparam` reads `SERVICE_SERVICENOW_MCP_IMAGE_NAME` into `servicenowMcpImageName` (helloworld placeholder only when empty).
+
+## Continuous Evaluation (Foundry-native quality monitoring)
+
+Enabled on `servicenow-assistant` in BOTH Foundry projects (2026-05-19). Passively scores every agent response.
+
+| Project | Eval config ID | Eval group ID |
+|---|---|---|
+| `aiproj-customer-360` | `continuous-eval-servicenow-assistant-fe87301ecf26422d9ca97f4111` | `eval_f5b96862dd634d8f8a96c7b744b7e65c` |
+| `aiproj-sf-mcp-obo`   | `continuous-eval-servicenow-assistant-cbb8aa4cdefd470db76d2d6d8e` | `eval_b38745a3f26749ccb6818ba3010e2d8f` |
+
+**Evaluators** (quality, no safety): `task_completion`, `tool_call_accuracy`, `response_completeness`.
+**Config**: `samplingRate=100`, `maxHourlyRuns=10`, `deploymentName=gpt-5.4`, `scenario=standard`, `enabled=true`.
+
+**Read scores** via Azure MCP `foundry`:
+```
+evaluation_get with isRequestForRuns=true + evalId
+```
+Or in the Foundry portal → project → Evaluations → ContinuousEval-servicenow-assistant-*
+
+**Known limitation**: passive — no traffic = no scores. First scores appear several minutes after the first agent response is logged in App Insights.
+
+## Hibernation Prevention (dev434731)
+
+PDIs auto-hibernate after ~10 days of inactivity. To keep dev434731 awake:
+
+- **Script**: `scripts/keepalive_ping.py` — signs a JWT Bearer assertion (using `certs/sn-jwt-bearer.key` + `certs/sn-oauth-config.json`), exchanges it at `/oauth_token.do`, then calls Table API. Counts as authenticated activity.
+- **Schedule**: Copilot CLI `manage_schedule` #1 — fires every 1 day, invokes the script. View/manage via `manage_schedule action=list|stop`.
+- **Why every 1d (not 5d)**: Copilot's `manage_schedule` caps interval at `1d`. Daily is well under the 10-day hibernation window, so it's a safe upper bound.
+- **Manual run**: `python scripts/keepalive_ping.py --quiet` from repo root.
+- **If the schedule lapses** (machine off for 10+ days): instance hibernates → must be woken via developer.servicenow.com.
+
+**Skipped evaluators (deliberate)**:
+- `groundedness` / `groundedness_pro` — agent grounds in live Table API results, not retrievable docs
+- `coherence` — gpt-5.4 saturates; low signal
+- All safety evaluators (`violence`, `self_harm`, `hate_unfairness`, `indirect_attack`, etc.) — internal SN admin queries, near-zero risk surface
+
+---
 
 ## Teams/Copilot Deployment
 
