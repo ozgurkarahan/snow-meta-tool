@@ -255,6 +255,14 @@ The project deploys into an **existing** resource group alongside the Salesforce
 - 🔐 **APIM Certificate** — JWT Bearer signing cert (from Key Vault)
 - 🤖 **Foundry Connection** (`servicenow-obo-oauth2`) — RemoteTool with OAuth2 identity passthrough, ensured create-only by the post-provision hook (not Bicep)
 
+**V3 staging source** is isolated in [agents/servicenow-v3](agents/servicenow-v3/README.md):
+an additive Managed Harness prompt agent (`gpt-5.4-pro`) with an exact-version
+Toolbox MCP endpoint and the agent-level `servicenow-itsm` skill v2. Root deployment
+does not include it or change production routing. The staging binder verifies the
+Toolbox version and emits a matching new first-party connection payload without
+Azure writes. ServiceNow agent-memory attachment/provisioning is removed from
+source; the shared memory store and Container Apps memory sizing are untouched.
+
 ### 🔄 APIM OBO Policy
 
 The APIM policy (`infra/policies/sn-mcp-obo-policy.xml`) handles the full token exchange:

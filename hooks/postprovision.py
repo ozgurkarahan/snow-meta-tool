@@ -4,7 +4,7 @@ After Bicep deploys Azure resources, this hook:
 0. Uploads SN JWT Bearer cert to Key Vault + creates APIM cert binding
 1. Updates APIM Named Values (SnOboClientId, SnOboInstanceUrl, SnJwtBearerKid)
 2. Ensures Foundry servicenow-obo-oauth2 connection (OAuth2, create-only; never deletes)
-3. Creates Foundry agent (servicenow-assistant) with MCP + Memory tools
+3. Creates Foundry agent (servicenow-assistant) with the MCP tool
 4. Creates Agent Application + Deployment for Activity Protocol endpoint
 """
 
@@ -550,68 +550,11 @@ def _poll_provisioning(get_url, timeout=300, interval=10):
 # Step 3: Create Foundry agent (servicenow-assistant)
 # ============================================================================
 
-def create_memory_store(project_client):
-    """Create the project-memory store (idempotent -- get-or-create).
-
-    Uses text-embedding-3-small for embeddings and gpt-5.4 for chat summaries.
-    Returns the store name on success, None on failure.
-    """
-    from azure.ai.projects.models import (
-        MemoryStoreDefaultDefinition,
-        MemoryStoreDefaultOptions,
-    )
-
-    store_name = "project-memory"
-    print(f"\n  Creating memory store '{store_name}'...")
-
-    # Check if store already exists
-    try:
-        existing = project_client.memory_stores.get(name=store_name)
-        if existing:
-            print(f"  Memory store already exists: {store_name}")
-            return store_name
-    except Exception:
-        pass  # Store doesn't exist -- create it
-
-    # Retry with backoff (same propagation delay as agent creation)
-    max_retries = 4
-    retry_delay = 10
-    for attempt in range(max_retries):
-        try:
-            project_client.memory_stores.create(
-                name=store_name,
-                definition=MemoryStoreDefaultDefinition(
-                    chat_model="gpt-5.4",
-                    embedding_model="text-embedding-3-small",
-                    options=MemoryStoreDefaultOptions(
-                        user_profile_enabled=True,
-                        chat_summary_enabled=True,
-                        user_profile_details=(
-                            "ServiceNow user. Track their common tables, field names, "
-                            "encoded query patterns, role, department, and error patterns."
-                        ),
-                    ),
-                ),
-            )
-            print(f"  Memory store created: {store_name}")
-            return store_name
-        except Exception as e:
-            if attempt < max_retries - 1:
-                print(f"  Attempt {attempt + 1}/{max_retries}: {e}")
-                print(f"  Retrying in {retry_delay}s...")
-                time.sleep(retry_delay)
-                retry_delay = min(retry_delay * 2, 60)
-            else:
-                print(f"  WARNING: Failed to create memory store: {e}")
-                return None
-
-
 def create_agent():
     """Create a Foundry agent with the ServiceNow MCP tool using the v2 SDK.
 
     Uses the OAuth2 identity-passthrough connection (servicenow-obo-oauth2)
     and the OBO APIM endpoint.
-    Includes MemorySearchPreviewTool for per-user conversational memory.
     Returns the agent version number (for use by create_agent_application).
     """
     project_endpoint = os.environ.get("AI_FOUNDRY_PROJECT_ENDPOINT")
@@ -638,7 +581,7 @@ def create_agent():
     from azure.identity import DefaultAzureCredential
     from azure.ai.projects import AIProjectClient
     from azure.ai.projects.models import (
-        PromptAgentDefinition, MCPTool, MemorySearchPreviewTool,
+        PromptAgentDefinition, MCPTool,
     )
 
     credential = DefaultAzureCredential()
@@ -660,32 +603,14 @@ def create_agent():
     )
     tools = [sn_mcp_tool]
 
-    # Create memory store and add MemorySearchPreviewTool
-    store_name = create_memory_store(project_client)
-    if store_name:
-        memory_tool = MemorySearchPreviewTool(
-            memory_store_name=store_name,
-            scope="{{$userId}}",
-            update_delay=300,
-        )
-        tools.append(memory_tool)
-        print(f"  MemorySearchPreviewTool added (store={store_name}, scope=per-user)")
-
     instructions = """\
 You are an assistant with access to ServiceNow via MCP tools.
-
-## Memory
-You have access to a memory store that remembers details from past conversations.
-- Before calling discover(table=...) for read queries, check memory -- you may already know \
-the table's fields.
-- ALWAYS call discover(table=...) before writes regardless of memory -- field types and \
-choices can change.
 
 ## Workflow
 1. Plan -- tell the user what you intend to do before calling tools.
 2. If you already know the table name, skip discover(filter=...) and go straight to step 3.
 3. discover(table=...) -- get field metadata (REQUIRED before writes, optional for reads \
-if you know the fields from memory).
+if the fields were already verified in this conversation).
 4. query -- read records. ALWAYS specify the fields parameter.
 5. write -- create, update, or delete records.
 6. Summarize -- present results in plain language.

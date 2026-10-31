@@ -57,6 +57,7 @@ curl /health           # Container App health check
 | `infra/policies/sn-mcp-obo-prm-policy.xml` | RFC 9728 Protected Resource Metadata |
 | `hooks/postprovision.py` | Post-deploy: cert, APIM, connection, agent, app, bot, Teams publish (8 steps) |
 | `hooks/requirements.txt` | Python dependencies for postprovision hook (azure-ai-projects, azure-identity) |
+| `agents/servicenow-v3/azure.yaml` | Isolated Managed Harness staging agent + Toolbox; excluded from root deployment |
 | `assets/teams/` | Teams app icons (color.png 192x192, outline.png 32x32) |
 | `teams-app/` | Generated Teams app package (.zip with manifest + icons) |
 | `scripts/test_jwt_bearer.py` | Automated SN instance setup + JWT Bearer test |
@@ -86,7 +87,14 @@ azd env set SN_JWT_BEARER_KID "<kid>"
 azd up
 ```
 
-Post-provision hook automatically (8 steps): uploads PFX to Key Vault, creates APIM cert binding, updates Named Values, ensures the `servicenow-obo-oauth2` OAuth2 Foundry connection (create-only, never deletes; needs `MCP_OAUTH_CLIENT_ID` / `MCP_OAUTH_CLIENT_SECRET` in the azd env, registers the connection redirect URI on the Entra app), creates `servicenow-assistant` agent with MCP + Memory tools, provisions Agent Application, creates Agent Deployment, bootstraps Bot Service + Teams/DirectLine channels, and publishes Teams app to org catalog (requires `AppCatalog.ReadWrite.All`).
+Post-provision hook automatically (8 steps): uploads PFX to Key Vault, creates APIM cert binding, updates Named Values, ensures the `servicenow-obo-oauth2` OAuth2 Foundry connection (create-only, never deletes; needs `MCP_OAUTH_CLIENT_ID` / `MCP_OAUTH_CLIENT_SECRET` in the azd env, registers the connection redirect URI on the Entra app), creates `servicenow-assistant` agent with the MCP tool, provisions Agent Application, creates Agent Deployment, bootstraps Bot Service + Teams/DirectLine channels, and publishes Teams app to org catalog (requires `AppCatalog.ReadWrite.All`).
+
+ServiceNow agent-memory provisioning and attachment have been removed from source.
+Do not delete or modify the shared `project-memory` store or its data. V3 staging is
+additive and lives under `agents/servicenow-v3`; root deployment and production
+routing do not include it. The custom APIM backend still uses OAuth2. Only the
+first-party, exact-version Toolbox endpoint uses a separate UserEntraToken
+connection; see the staging README for the binding contract.
 
 ## Key Constraints
 

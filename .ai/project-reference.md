@@ -83,11 +83,26 @@ Payload: {
 ## Foundry Agent
 
 - Agent: `servicenow-assistant` v7 (gpt-5.4)
-- Tools: MCPTool (discover, query, write via `servicenow-obo-oauth2` connection) + MemorySearchTool (project-memory, per-user scope)
+- Live v7 tools: MCPTool (discover, query, write via `servicenow-obo-oauth2` connection) + MemorySearchTool (project-memory, per-user scope). Source no longer provisions or attaches agent memory; this does not change the deployed v7 until a separately approved deployment.
 - Agent Application clientId: `4d7fd750-bf31-4c67-9e18-cea9d02fb205`
 - Agent Application ID: `6942944a-3b19-4ecb-96f7-e4a9cfd4fbb6`
 - Project endpoint: `https://aoai-sf-mcp-obo.services.ai.azure.com/api/projects/aiproj-sf-mcp-obo`
 - Shared Foundry project with `salesforce-assistant` agent
+
+### V3 staging source (not deployed)
+
+- Isolated manifest: `agents/servicenow-v3/azure.yaml`; never included in root `azure.yaml`.
+- Additive agent: `servicenow-assistant-v3`, `kind: prompt`, Managed Harness
+  `microsoft_copilot_preview`, model `gpt-5.4-pro`.
+- Toolbox: `servicenow-itsm-v3`, one raw MCP tool using the existing
+  `servicenow-obo-oauth2` OAuth2 backend connection. Both MCP hops require approval.
+- Agent skill: top-level `servicenow-itsm` version `"2"`, not a Toolbox entry.
+- First-party Toolbox connection: `servicenow-itsm-v3-toolbox`, RemoteTool /
+  UserEntraToken, audience `https://ai.azure.com`. Target and metadata must match
+  the exact deployed Toolbox version; never use an unversioned/latest endpoint.
+- Identity resolution is read-only; writes need explicit user confirmation.
+- No staging application, bot, production traffic routing, infrastructure, or
+  shared memory-store changes. Container Apps `memory` remains resource sizing.
 
 ### Foundry connection + provisioning invariants
 
