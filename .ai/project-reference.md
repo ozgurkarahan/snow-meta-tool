@@ -89,7 +89,7 @@ Payload: {
 - Project endpoint: `https://aoai-sf-mcp-obo.services.ai.azure.com/api/projects/aiproj-sf-mcp-obo`
 - Shared Foundry project with `salesforce-assistant` agent
 
-### V3 staging source (not deployed)
+### V3 staging (deployed 2026-10-31; runtime consent-gated)
 
 - Isolated manifest: `agents/servicenow-v3/azure.yaml`; never included in root `azure.yaml`.
 - Additive agent: `servicenow-assistant-v3`, `kind: prompt`, Managed Harness
@@ -103,6 +103,30 @@ Payload: {
 - Identity resolution is read-only; writes need explicit user confirmation.
 - No staging application, bot, production traffic routing, infrastructure, or
   shared memory-store changes. Container Apps `memory` remains resource sizing.
+- Live Toolbox `servicenow-itsm-v3` and active agent `servicenow-assistant-v3`
+  are both version `"1"`; the separate UserEntraToken connection has an exact
+  version-1 Toolbox endpoint and matching metadata. Each service was deployed once.
+- Mandatory inline flags: `AZURE_DEV_USER_AGENT=microsoft_foundry_skill`,
+  `AZD_ALPHA_ENABLE_AGENTS_MANAGED_HARNESS=true`,
+  `AZD_AGENT_SKIP_ROLE_ASSIGNMENTS=true`. Never use whole-project deployment or
+  root provisioning/hooks for staging.
+- The initial bounded current-user attempt failed before tools: a project-scoped
+  conversation was supplied to the agent-scoped Managed Harness endpoint. Provider
+  code was not retained; this is not evidence of a ServiceNow backend failure.
+  Its exact-owned project conversation was deleted.
+- The coordinator's corrected agent-scoped diagnostic completed at
+  `oauth_consent_request` for `servicenow_toolbox`, with zero tool calls and
+  `errors: []`; its verified owned conversation was deleted. Backend read remains
+  unverified until separately approved consent/tool approval. No consent, approval,
+  manual permission grant, or account switch occurred.
+- Runtime client must use `AIProjectClient(..., allow_preview=True)` and
+  `project.get_openai_client(agent_name="servicenow-assistant-v3")` with
+  `Foundry-Features: MicrosoftCopilot=V1Preview`, timeout 90 and zero automatic
+  retries. Conversation creation/invocation/inspection/cleanup must use that same
+  agent-scoped client.
+- Foundry generated managed per-agent Entra identity dependencies for the persistent
+  V3 agent; these are not test artifacts and must not be removed during cleanup.
+- Live inventory and sanitized contract: `agents/servicenow-v3/deployment-ledger.json`.
 
 ### Foundry connection + provisioning invariants
 

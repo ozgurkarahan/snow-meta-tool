@@ -275,3 +275,67 @@ def test_container_image_preservation_and_memory_sizing_remain():
     container = (ROOT / "infra" / "modules" / "servicenow-mcp-app.bicep").read_text(encoding="utf-8")
     assert "param servicenowMcpImageName = readEnvironmentVariable('SERVICE_SERVICENOW_MCP_IMAGE_NAME', '')" in parameters
     assert "memory: '0.5Gi'" in container
+
+
+def test_live_ledger_retains_exact_staging_contract_without_credentials(source):
+    ledger = json.loads((STAGING / "deployment-ledger.json").read_text(encoding="utf-8"))
+    toolbox = ledger["toolbox"]
+    connection = ledger["connection"]
+    agent = ledger["agent"]
+    expected_endpoint = (
+        f"{ledger['project_endpoint']}/toolboxes/{toolbox['name']}/versions/{toolbox['version']}/mcp?api-version=v1"
+    )
+    assert toolbox["endpoint"] == connection["target"] == agent["toolbox_endpoint"] == expected_endpoint
+    assert connection["metadata"] == {
+        "type": "toolbox_MCP", "toolboxName": toolbox["name"], "toolboxVersion": toolbox["version"],
+    }
+    assert connection["auth_type"] == "UserEntraToken"
+    assert connection["category"] == "RemoteTool"
+    assert connection["audience"] == "https://ai.azure.com"
+    assert connection["created_only_after_absence"] is True
+    assert toolbox["require_approval"] == agent["require_approval"] == "always"
+    assert toolbox["allowed_tools"] == source["services"]["servicenow-itsm-v3"]["tools"][0]["allowed_tools"]
+    assert toolbox["backend_connection"] == "servicenow-obo-oauth2"
+    assert toolbox["backend_auth_type"] == "OAuth2"
+    assert toolbox["skills"] == []
+    assert agent["allowed_tools"] == source["services"]["servicenow-assistant-v3"]["tools"][0]["allowed_tools"]
+    assert agent["model"] == source["services"]["servicenow-assistant-v3"]["model"]
+    assert agent["harness_type"] == source["services"]["servicenow-assistant-v3"]["harness"]["type"]
+    assert agent["skills"] == source["services"]["servicenow-assistant-v3"]["skills"]
+    assert ledger["runtime_check"]["request_scope"]["read_only"] is True
+    assert ledger["runtime_check"]["consent_started"] is False
+    assert ledger["runtime_check"]["tool_approvals_granted"] == 0
+    assert ledger["runtime_check"]["owned_test_conversation_deleted"] is True
+    assert ledger["runtime_check"]["status"] == "oauth_consent_request"
+    corrected = ledger["runtime_check"]["corrected_check"]
+    assert corrected["client_scope"] == "agent"
+    assert corrected["allow_preview"] is True
+    assert corrected["foundry_features"] == "MicrosoftCopilot=V1Preview"
+    assert corrected["max_retries"] == 0
+    assert corrected["protocol_status"] == "completed"
+    assert corrected["output_types"] == ["oauth_consent_request"]
+    assert corrected["errors"] == []
+    assert corrected["tool_calls"] == 0
+    assert corrected["owned_test_conversation_deleted"] is True
+    assert ledger["safeguards"]["manual_permission_grants"] is False
+    assert ledger["safeguards"]["foundry_managed_agent_identities_generated"] is True
+
+    def check_keys(value):
+        if isinstance(value, dict):
+            assert not set(value).intersection({
+                "credentials", "client_id", "principal_id", "oid", "user_email",
+                "access_token", "refresh_token", "authorization", "consent_link", "consent_url",
+            })
+            for child in value.values():
+                check_keys(child)
+        elif isinstance(value, list):
+            for child in value:
+                check_keys(child)
+
+    check_keys(ledger)
+    runbook = (STAGING / "README.md").read_text(encoding="utf-8")
+    assert "$env:AZURE_DEV_USER_AGENT='microsoft_foundry_skill'" in runbook
+    assert "$env:AZD_ALPHA_ENABLE_AGENTS_MANAGED_HARNESS='true'" in runbook
+    assert "$env:AZD_AGENT_SKIP_ROLE_ASSIGNMENTS='true'" in runbook
+    assert 'agent_name="servicenow-assistant-v3"' in runbook
+    assert '"Foundry-Features": "MicrosoftCopilot=V1Preview"' in runbook

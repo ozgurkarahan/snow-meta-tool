@@ -1,0 +1,106 @@
+{
+  "schema_version": 1,
+  "verification_date_utc": "2026-10-31",
+  "deployment_verified_at_utc": "2026-10-31T03:01:58Z",
+  "subscription_id": "44026b8b-9f88-44d9-8f46-0898baa4bcd5",
+  "resource_group": "rg-sf-mcp-obo",
+  "project_endpoint": "https://aoai-sf-mcp-obo.services.ai.azure.com/api/projects/aiproj-sf-mcp-obo",
+  "toolbox": {
+    "name": "servicenow-itsm-v3",
+    "version": "1",
+    "endpoint": "https://aoai-sf-mcp-obo.services.ai.azure.com/api/projects/aiproj-sf-mcp-obo/toolboxes/servicenow-itsm-v3/versions/1/mcp?api-version=v1",
+    "deployment_count": 1,
+    "backend_connection": "servicenow-obo-oauth2",
+    "backend_auth_type": "OAuth2",
+    "backend_endpoint": "https://apim-sf-mcp-obo.azure-api.net/servicenow-mcp-obo/mcp",
+    "require_approval": "always",
+    "allowed_tools": ["discover", "query", "write"],
+    "skills": []
+  },
+  "connection": {
+    "name": "servicenow-itsm-v3-toolbox",
+    "created_only_after_absence": true,
+    "category": "RemoteTool",
+    "auth_type": "UserEntraToken",
+    "audience": "https://ai.azure.com",
+    "target": "https://aoai-sf-mcp-obo.services.ai.azure.com/api/projects/aiproj-sf-mcp-obo/toolboxes/servicenow-itsm-v3/versions/1/mcp?api-version=v1",
+    "metadata": {
+      "type": "toolbox_MCP",
+      "toolboxName": "servicenow-itsm-v3",
+      "toolboxVersion": "1"
+    }
+  },
+  "agent": {
+    "name": "servicenow-assistant-v3",
+    "version": "1",
+    "status": "active",
+    "state": "enabled",
+    "kind": "prompt",
+    "harness_type": "microsoft_copilot_preview",
+    "model": "gpt-5.4-pro",
+    "deployment_count": 1,
+    "protocol": "responses",
+    "skills": [{"name": "servicenow-itsm", "version": "2"}],
+    "toolbox_connection": "servicenow-itsm-v3-toolbox",
+    "toolbox_endpoint": "https://aoai-sf-mcp-obo.services.ai.azure.com/api/projects/aiproj-sf-mcp-obo/toolboxes/servicenow-itsm-v3/versions/1/mcp?api-version=v1",
+    "require_approval": "always",
+    "allowed_tools": ["servicenow_mcp___discover", "servicenow_mcp___query", "servicenow_mcp___write"]
+  },
+  "runtime_check": {
+    "status": "oauth_consent_request",
+    "invocations": 2,
+    "same_current_user_verified": true,
+    "request_scope": {
+      "tool": "servicenow_mcp___query",
+      "table": "incident",
+      "fields": "number",
+      "limit": 1,
+      "read_only": true
+    },
+    "initial_check": {
+      "owner": "child",
+      "cli_exit_code": 1,
+      "output_types": ["error"],
+      "failure_class": "pre-tool client-scope mismatch",
+      "client_scope": "Project-scoped conversation supplied to agent-scoped Managed Harness endpoint.",
+      "provider_error_code": null,
+      "provider_error_detail": "Initial provider code unavailable; not evidence of a ServiceNow backend failure.",
+      "owned_test_conversation_deleted": true
+    },
+    "corrected_check": {
+      "owner": "coordinator",
+      "client_scope": "agent",
+      "allow_preview": true,
+      "foundry_features": "MicrosoftCopilot=V1Preview",
+      "timeout_seconds": 90,
+      "max_retries": 0,
+      "response_id": "caresp_01f692bb08bdb53700Mtxe2QE5oxcyMsr28Rls68c58ZI4FqLx",
+      "protocol_status": "completed",
+      "http_status": null,
+      "http_request_id": null,
+      "output_types": ["oauth_consent_request"],
+      "server_label": "servicenow_toolbox",
+      "errors": [],
+      "tool_calls": 0,
+      "owned_test_conversation_deleted": true
+    },
+    "query_tool_calls": 0,
+    "consent_started": false,
+    "tool_approvals_granted": 0,
+    "owned_test_conversation_deleted": true
+  },
+  "safeguards": {
+    "existing_connections_unchanged": true,
+    "production_agent_and_application_unchanged": true,
+    "apim_and_container_app_unchanged": true,
+    "root_deployment_and_infra_unchanged": true,
+    "project_memory_not_modified": true,
+    "rbac_changes_requested": false,
+    "manual_permission_grants": false,
+    "foundry_managed_agent_identities_generated": true,
+    "account_switches": 0,
+    "whole_project_deployments": 0,
+    "root_hooks_executed": 0,
+    "raw_tokens_or_identity_data_in_ledger": false
+  }
+}

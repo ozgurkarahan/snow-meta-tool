@@ -18,18 +18,87 @@ memory; it does not delete or modify the shared `project-memory` store or its da
 | Toolbox connection | New `servicenow-itsm-v3-toolbox`, RemoteTool / UserEntraToken, audience `https://ai.azure.com` |
 | Connection metadata | `type=toolbox_MCP`, `toolboxName=servicenow-itsm-v3`, exact `toolboxVersion` |
 
+## Live inventory
+
+Verified 2026-10-31 in subscription `44026b8b-9f88-44d9-8f46-0898baa4bcd5`,
+resource group `rg-sf-mcp-obo`, existing project
+`https://aoai-sf-mcp-obo.services.ai.azure.com/api/projects/aiproj-sf-mcp-obo`.
+The sanitized [deployment ledger](deployment-ledger.json) records the live contract
+without tokens, identities, credential-bearing URLs, or provider envelopes.
+
+| Resource | Live state |
+|---|---|
+| `servicenow-itsm-v3` | Immutable Toolbox version `"1"`; created by one named deployment |
+| `servicenow-itsm-v3-toolbox` | Created after confirmed absence; RemoteTool / UserEntraToken with exact version-1 target and metadata |
+| `servicenow-assistant-v3` | Enabled, active agent version `"1"`; `microsoft_copilot_preview`, `gpt-5.4-pro`, skill v2 |
+| Runtime read | Corrected agent-scoped request completed at `oauth_consent_request` for `servicenow_toolbox`; zero tool calls and no response errors |
+| Cleanup | Both exact-owned test conversations deleted; no consent or tool approval was granted |
+| Protected surfaces | Existing backend connection, production agent/application, APIM, Container App and source infrastructure unchanged |
+
+The initial provider error code was not retained by the sanitizer. Its identified
+project/agent conversation-scope mismatch was **not evidence of a ServiceNow backend
+failure**. The coordinator's single corrected agent-scoped request reached the
+expected consent gate, confirming protocol-level operation but **not a completed
+ServiceNow read**. HTTP status and HTTP request ID were not explicitly captured;
+the ledger records them as unavailable rather than inventing values.
+
+The agent and connection both reference this verified Toolbox endpoint:
+
+```text
+https://aoai-sf-mcp-obo.services.ai.azure.com/api/projects/aiproj-sf-mcp-obo/toolboxes/servicenow-itsm-v3/versions/1/mcp?api-version=v1
+```
+
+**Do not repeat the successful deployments or recreate the connection.** Runtime
+testing stopped at the consent gate. Completing a backend read requires a separate
+user-approved consent and tool-approval workflow; neither was started or granted.
+Never treat user unavailability as consent. Browser interaction is not required
+for this API-only staging; leave an in-use browser profile untouched.
+
+Foundry automatically provisioned managed per-agent Entra identity dependencies for
+the persistent V3 agent. No manual permission grants were made. These dependencies
+belong to the staged agent and must not be deleted as test-conversation cleanup.
+
+## Mandatory process flags and deployment boundary
+
+For **every azd command**, set `AZURE_DEV_USER_AGENT=microsoft_foundry_skill`
+inline in that process. Agent work also requires
+`AZD_ALPHA_ENABLE_AGENTS_MANAGED_HARNESS=true`; all staging commands use
+`AZD_AGENT_SKIP_ROLE_ASSIGNMENTS=true`. Do not rely on flags in a persisted
+environment or another shell. A read-only example:
+
+```powershell
+$env:AZURE_DEV_USER_AGENT='microsoft_foundry_skill'; `
+$env:AZD_ALPHA_ENABLE_AGENTS_MANAGED_HARNESS='true'; `
+$env:AZD_AGENT_SKIP_ROLE_ASSIGNMENTS='true'; `
+azd ai toolbox show servicenow-itsm-v3 --version 1 `
+  --project-endpoint https://aoai-sf-mcp-obo.services.ai.azure.com/api/projects/aiproj-sf-mcp-obo `
+  --output json
+```
+
+The two successful deployments were strictly service-scoped: the Toolbox used a
+generated Toolbox-only manifest; the agent used the binder's concrete agent-only
+manifest. Both local projects were explicitly configured for the subscription and
+existing Foundry project above. No `azd up`, `azd provision`, `azd deploy --all`,
+whole-project deployment, root hook, manual role assignment, production application,
+traffic-route change, or account switch was performed.
+
 ## Exact-version binding after review
 
-No V3 Toolbox version or connection is presumed to exist. The source manifest's
-`SERVICENOW_V3_TOOLBOX_ENDPOINT` is intentionally unresolved. Do not deploy the
-source agent or the whole staging project: create the Toolbox service first,
-then bind and deploy only the agent. No deployment is performed by the binder.
+The source manifest's `SERVICENOW_V3_TOOLBOX_ENDPOINT` remains intentionally
+unresolved; the deployed agent used the binder's verified literal version-1
+endpoint. The following procedure explains the binding contract for an explicitly
+approved future change; it is **not** authorization to rerun the existing deployment.
+Never deploy the source agent or the whole staging project. No deployment is
+performed by the binder.
 
 After the coordinator deploys **only** the `servicenow-itsm-v3` Toolbox service,
 read that exact version (not latest/default) from the chosen Foundry project:
 
 ```powershell
 # Run from agents\servicenow-v3 in an explicitly configured staging environment.
+$env:AZURE_DEV_USER_AGENT='microsoft_foundry_skill'; `
+$env:AZD_ALPHA_ENABLE_AGENTS_MANAGED_HARNESS='true'; `
+$env:AZD_AGENT_SKIP_ROLE_ASSIGNMENTS='true'; `
 azd ai toolbox show servicenow-itsm-v3 --version <exact-version> `
   --project-endpoint https://aoai-sf-mcp-obo.services.ai.azure.com/api/projects/aiproj-sf-mcp-obo `
   --output json
@@ -80,6 +149,38 @@ Toolbox version, agent endpoint, and live connection target before deployment.
 Do not invoke the root provisioning hook, create an application, or change
 production traffic routing. Runtime/identity checks happen separately after
 review and deployment; the focused repository tests make no Azure calls.
+
+For any separately approved runtime diagnostic, retain sanitized HTTP status,
+error code/message, and request/response ID rather than collapsing an error to
+its type. Never persist raw responses, consent links, tokens, identity data, or
+unredacted tool results. Stop on `oauth_consent_request` or `mcp_approval_request`;
+do not automatically approve, open consent, retry a consent gate, change accounts,
+or modify RBAC. Delete only conversations created for that exact diagnostic after
+verifying their owned input, and remove only their CLI/SDK test-state references.
+
+Managed Harness conversations must be **agent-scoped**. The corrected diagnostic
+used `AIProjectClient(..., allow_preview=True)` followed by:
+
+```python
+project.get_openai_client(
+    agent_name="servicenow-assistant-v3",
+    default_headers={"Foundry-Features": "MicrosoftCopilot=V1Preview"},
+    timeout=90,
+    max_retries=0,
+)
+```
+
+Use that same scoped client for conversation creation, response invocation,
+ownership inspection, and deletion. A conversation created by plain
+`project.get_openai_client()` belongs to the project store and must not be supplied
+to the agent endpoint. The initial diagnostic made that scope mistake; its owned
+project conversation was deleted. The corrected agent-scoped conversation was
+also verified and deleted. No further invocation is authorized by this runbook.
+
+Any retained local helper must leave input metadata snapshots untouched, write
+sanitized verification to a separate output, preserve safe error/status/request-ID
+diagnostics, and refuse to repeat an already recorded check. Neither a generic
+client error nor an OAuth consent request is proof of a completed backend read.
 
 ## Focused local checks
 
