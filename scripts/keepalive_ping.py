@@ -4,7 +4,7 @@ Reads instance + client_id + kid from certs/sn-oauth-config.json and uses the ce
 already in certs/. Idempotent and safe to run repeatedly.
 
 Usage:
-    python scripts/keepalive_ping.py                  # uses dev434731 from config
+    python scripts/keepalive_ping.py                  # uses "instance" from config
     python scripts/keepalive_ping.py --instance ...   # override
 
 Exit code 0 if the instance is awake and responding to authenticated API calls.
@@ -26,7 +26,7 @@ from cryptography.hazmat.primitives.asymmetric import padding
 REPO = Path(__file__).parent.parent
 CONFIG = REPO / "certs" / "sn-oauth-config.json"
 KEY_FILE = REPO / "certs" / "sn-jwt-bearer.key"
-DEFAULT_INSTANCE = "https://dev434731.service-now.com"
+DEFAULT_INSTANCE = "https://dev330554.service-now.com"
 
 
 def b64url(data: bytes) -> str:
@@ -35,7 +35,7 @@ def b64url(data: bytes) -> str:
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
-    parser.add_argument("--instance", default=None, help="SN instance URL (defaults to dev434731)")
+    parser.add_argument("--instance", default=None, help="SN instance URL (defaults to config, then dev330554)")
     parser.add_argument("--quiet", action="store_true", help="Only print summary line")
     args = parser.parse_args()
 
@@ -45,7 +45,7 @@ def main():
     cfg = json.loads(CONFIG.read_text(encoding="utf-8"))
     key = serialization.load_pem_private_key(KEY_FILE.read_bytes(), password=None)
 
-    instance = (args.instance or DEFAULT_INSTANCE).rstrip("/")
+    instance = (args.instance or cfg.get("instance") or DEFAULT_INSTANCE).rstrip("/")
     client_id, kid, sub = cfg["client_id"], cfg["kid"], cfg["test_email"]
 
     now = int(time.time())

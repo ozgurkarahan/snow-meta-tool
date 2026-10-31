@@ -66,15 +66,16 @@ Payload: {
 
 ## Test Instance (Dev)
 
-- Instance: https://dev434731.service-now.com (since 2026-10-07; admin credential stored in `now-sdk auth` alias `dev434731`)
-- OAuth Client ID: `f42422554e284ef48bb8ca1418705799`
-- JWT kid: `f76a4af4137146ea9a3618c3b9a25666`
+- Instance: https://dev330554.service-now.com (since 2026-10-31; Zurich PDI — REST basic auth is rejected for `admin`, so admin setup runs through an authenticated UI session with `X-UserToken`)
+- OAuth Client ID: `eeaab49dc8ec4462abfa9a418b9c3c7a`
+- JWT kid: `6b9b7db09df54b58ac0675aa2d139bb2`
 - JWT Bearer cert thumbprint: `947043BB0892B46FDDADD410576A19C879F3E5CD` (same PFX as dev194081 — reused across PDI migrations)
 - Test users: `jwt.test@example.com` (user_name=jwt.test), `ozgurkarahan@MngEnvMCAP549101.onmicrosoft.com` (user_name=ozgurkarahan and full-UPN alias)
 - All test users have `itil` + `personalize_dictionary` roles
 - APIM cache key is versioned: `sn-token-{{SnOboInstanceUrl}}-<email>` — switching `SnOboInstanceUrl` automatically orphans cached tokens
 
 ### Previous instances (released back to PDI pool)
+- `dev434731` (lost after ~14 idle days; last APIM 200 on 2026-10-17, JWT bearer `access_denied` for every user on 2026-10-31; replaced by dev330554 — `scripts/repair_sn_pdi.py` documents the cert/app/verifier/user setup, then update APIM Named Values `SnOboInstanceUrl`/`SnOboClientId`/`SnJwtBearerKid`, `ca-sn-mcp` `SN_INSTANCE_URL`, and azd env `SN_INSTANCE_URL`/`SN_OAUTH_CLIENT_ID`/`SN_JWT_BEARER_KID`)
 - `dev300704` (lost by 2026-10-07: JWT ****** returned `access_denied` for every client; replaced by dev434731 — re-run `scripts/test_jwt_bearer.py` setup steps + seed `seed_demo_data.py --sn-only`, then update APIM Named Values `SnOboInstanceUrl`/`SnOboClientId`/`SnJwtBearerKid` and `ca-sn-mcp` `SN_INSTANCE_URL`)
 - `dev194081` (hibernated 2026-05-17, released when dev300704 was created)
 - `dev281447` (only ever a placeholder in bicep defaults)
@@ -115,9 +116,9 @@ Or in the Foundry portal → project → Evaluations → ContinuousEval-servicen
 
 **Known limitation**: passive — no traffic = no scores. First scores appear several minutes after the first agent response is logged in App Insights.
 
-## Hibernation Prevention (dev434731)
+## Hibernation Prevention (dev330554)
 
-PDIs auto-hibernate after ~10 days of inactivity. To keep dev434731 awake:
+PDIs auto-hibernate after ~10 days of inactivity. To keep dev330554 awake:
 
 - **Script**: `scripts/keepalive_ping.py` — signs a JWT Bearer assertion (using `certs/sn-jwt-bearer.key` + `certs/sn-oauth-config.json`), exchanges it at `/oauth_token.do`, then calls Table API. Counts as authenticated activity.
 - **Schedule**: Copilot CLI `manage_schedule` #1 — fires every 1 day, invokes the script. View/manage via `manage_schedule action=list|stop`.
