@@ -204,3 +204,5 @@ Run with the shared runner in the Salesforce repo (`scripts/test_e2e_v3_harness.
 All test conversations were deleted. A later run (about 00:00 UTC) returned
 `oauth_consent_request` (MCP `-32006`) again. The delegated consent must be renewed
 periodically until the token-refresh behaviour is understood.
+
+After re-consent (2026-11-01), a single clean run scored **4/4 PASS** again, with the work note attributed to the signed-in ServiceNow user. In the same final pass, Salesforce scored 4/4 and Customer 360 scored 8/8 (salesforce-meta-tool-identity-propagation#16).
