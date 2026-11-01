@@ -195,3 +195,12 @@ python -m pytest tests\test_servicenow_v3_staging.py tests\test_servicenow_no_me
 Identity resolution is read-only. An identity query cannot provision a user,
 grant roles, switch credentials, or retry with another identity after denial.
 Writes still require an exact-action preview and explicit user confirmation.
+
+## End-to-end result after consent (2026-10-31)
+
+Run with the shared runner in the Salesforce repo (`scripts/test_e2e_v3_harness.py --profile servicenow`):
+**4/4 PASS**, covering identity, read, write guard, and a confirmed work note. The work note on
+`INC0010001` was attributed to the signed-in ServiceNow user (`sys_updated_by`).
+All test conversations were deleted. A later run (about 00:00 UTC) returned
+`oauth_consent_request` (MCP `-32006`) again. The delegated consent must be renewed
+periodically until the token-refresh behaviour is understood.
