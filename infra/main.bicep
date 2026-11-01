@@ -54,6 +54,12 @@ param snJwtBearerCertThumbprint string = ''
 @description('Currently deployed ServiceNow MCP image (azd SERVICE_SERVICENOW_MCP_IMAGE_NAME). Keeps azd provision from resetting ca-sn-mcp to the helloworld placeholder.')
 param servicenowMcpImageName string = ''
 
+@description('Opt in to the additive V3 agent-endpoint Teams bot; never changes the legacy bot/application')
+param enableServicenowV3Bot bool = false
+
+@description('V3 agent instance_identity.client_id, verified before publishing; not the legacy application ID')
+param servicenowV3BotMsaAppId string = ''
+
 // ============================================================================
 // Reference existing shared resources
 // ============================================================================
@@ -141,6 +147,17 @@ module apimSnJwtBearerCert 'modules/apim-sn-jwt-bearer-cert.bicep' = if (!empty(
 
 var snOboConnectionName = 'servicenow-obo-oauth2'
 
+var servicenowV3BotEnabled = enableServicenowV3Bot
+
+module servicenowV3Bot 'modules/bot-service.bicep' = if (servicenowV3BotEnabled) {
+  name: 'servicenow-v3-teams-bot'
+  params: {
+    msaAppId: servicenowV3BotMsaAppId
+    tenantId: tenant().tenantId
+    endpoint: 'https://${cognitive.name}.services.ai.azure.com/api/projects/${aiProjectName}/agents/servicenow-assistant-v3/endpoint/protocols/activityProtocol?api-version=v1'
+  }
+}
+
 // ============================================================================
 // Outputs (become azd env vars)
 // ============================================================================
@@ -157,3 +174,4 @@ output APIM_GATEWAY_URL string = apim.properties.gatewayUrl
 output COGNITIVE_ACCOUNT_NAME string = cognitive.name
 output AI_FOUNDRY_PROJECT_NAME string = aiProjectName
 output AZURE_RESOURCE_GROUP string = resourceGroup().name
+output SERVICENOW_V3_BOT_ID string = servicenowV3BotEnabled ? servicenowV3Bot!.outputs.botServiceId : ''

@@ -24,3 +24,7 @@ param snJwtBearerCertThumbprint = readEnvironmentVariable('SN_JWT_BEARER_CERT_TH
 
 // Preserve the live container image across `azd provision` (set by azd deploy)
 param servicenowMcpImageName = readEnvironmentVariable('SERVICE_SERVICENOW_MCP_IMAGE_NAME', '')
+
+// Explicit opt-in only; the legacy bot and Agent Application are not modified.
+param enableServicenowV3Bot = readEnvironmentVariable('SERVICENOW_V3_BOT_ENABLED', 'false') == 'true'
+param servicenowV3BotMsaAppId = readEnvironmentVariable('SERVICENOW_V3_BOT_MSA_APP_ID', '')

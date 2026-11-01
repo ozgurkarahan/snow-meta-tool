@@ -16,6 +16,7 @@ Desktop.ini
 # Environment
 .env
 .env.*
+.azure/
 
 # Certificates and secrets (NEVER commit)
 certs/
@@ -46,4 +47,3 @@ article/
 
 # Local-only assets (article sources, large media) — not committed
 .local/
-
