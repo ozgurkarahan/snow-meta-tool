@@ -7,6 +7,45 @@ Workflow rules live in `~/.ai/workflow.md` (global) -- do NOT duplicate them her
 
 ## Project-Specific Lessons
 
+### 2026-05-18 -- PDI Migration & Cache Invalidation Strategy
+
+**Mistake:** Created a new ServiceNow PDI (`dev300704`) before reactivating the hibernated old one (`dev194081`). Creating a new PDI on the same dev portal account **automatically releases the previous PDI back to the shared pool** — even if it's still hibernating and reachable, you no longer own it.
+
+**Root cause:** ServiceNow Personal Developer Instance policy: one active PDI per dev portal identity. The release is silent; the old hostname keeps serving content (hibernation page or even login page if pinged) but it can be reassigned to another developer at any moment.
+
+**Rule:**
+- A PDI can be hibernated *and* still owned (Sign in to wake), or released (gone from your "My instance(s)" dashboard regardless of whether the hostname resolves).
+- Reuse the existing X.509 certificate (`certs/sn-jwt-bearer.pfx`) across PDI migrations — the same private key works as long as the public cert PEM is uploaded to each new instance's `sys_certificate` table.
+- Migration order: bootstrap new SN OAuth/JWT artifacts FIRST → update Azure APIM Named Values + Container App env vars → invalidate cache.
+
+### 2026-05-18 -- APIM Internal Cache Has No External Purge API
+
+**Mistake:** Initial plan called for purging APIM's per-user `sn-token-<email>` cache entries directly after switching instances. This is not possible for APIM's internal (managed) cache — `cache-remove-value` is a policy operation only, the `on-error` cleanup may not fire for backend 401s, and there's no management REST API to delete individual entries.
+
+**Root cause:** APIM internal cache is consumption-only from a management perspective. External purge requires an external cache (Redis) which isn't deployed.
+
+**Rule:** Version cache keys with all inputs that would change when "stale" semantics apply. For SN OBO, change:
+  ```
+  key="@(\"sn-token-\" + email)"
+  ```
+to:
+  ```
+  key="@(\"sn-token-{{SnOboInstanceUrl}}-\" + email)"
+  ```
+A Named Value update automatically orphans all stale entries — no purge needed.
+
+### 2026-05-18 -- Multiple sys_user Records Sharing Same Email
+
+**Mistake:** Created both a short-name alias `ozgurkarahan` and a full-UPN user `ozgurkarahan@MngEnvMCAP549101.onmicrosoft.com` with the same `email` field. The seed script (`seed_test_data.py`) hardcodes `user_name=ozgurkarahan`, so both records were needed. But JWT Bearer `user_field=email` matched against the **first** record found (the short alias), which didn't have roles assigned.
+
+**Root cause:** When `oauth_jwt.user_field=email` and two sys_users share the same email, ServiceNow picks one deterministically (likely by sys_id/created_on order). The "wrong" user can be missing roles → empty result sets despite valid token.
+
+**Rule:**
+- Assign roles to ALL sys_user records sharing an email — not just the one you think will match.
+- Better long-term: ensure the email field is unique across active users, or refactor seed scripts to look up by full UPN.
+
+---
+
 ### 2026-03-03 -- ServiceNow OAuth JWT Bearer Setup via Table API
 
 **Mistake:** Created OAuth app in `oauth_entity` table (got type=`client`), used wrong table `oauth_entity_jwt_verifier` for JWT Verifier Map, missed `inbound_grant_type` field.

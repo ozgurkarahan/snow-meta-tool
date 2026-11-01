@@ -3,7 +3,7 @@
 After Bicep deploys Azure resources, this hook:
 0. Uploads SN JWT Bearer cert to Key Vault + creates APIM cert binding
 1. Updates APIM Named Values (SnOboClientId, SnOboInstanceUrl, SnJwtBearerKid)
-2. Recreates Foundry servicenow-obo connection via ARM REST
+2. Ensures Foundry servicenow-obo-oauth2 connection (OAuth2, create-only; never deletes)
 3. Creates Foundry agent (servicenow-assistant) with MCP + Memory tools
 4. Creates Agent Application + Deployment for Activity Protocol endpoint
 """
@@ -315,69 +315,183 @@ def update_apim_named_values():
 
 
 # ============================================================================
-# Step 2: Recreate Foundry servicenow-obo connection via ARM REST
+# Step 2: Ensure Foundry servicenow-obo-oauth2 connection (create-only)
 # ============================================================================
 
-def create_obo_connection():
-    """Create/recreate the servicenow-obo Foundry connection via ARM REST.
+DEFAULT_SN_OBO_CONNECTION_NAME = "servicenow-obo-oauth2"
+# Legacy UserEntraToken connection name -- Foundry rejects it for custom MCP
+# endpoints, so a stale azd env value pointing at it must never be honoured.
+_LEGACY_SN_OBO_CONNECTION_NAMES = {"servicenow-obo"}
 
-    Bicep creates the connection but ARM REST allows updating auth properties
-    that Bicep may not fully support. Delete + PUT for clean state.
+
+def _sn_obo_connection_name():
+    name = os.environ.get("SN_OBO_CONNECTION_NAME", "")
+    if not name or name in _LEGACY_SN_OBO_CONNECTION_NAMES:
+        return DEFAULT_SN_OBO_CONNECTION_NAME
+    return name
+
+
+def _register_connection_redirect(oauth_client_id, redirect_url):
+    """Append an ApiHub connection's redirect URI to the OAuth app's web.redirectUris.
+
+    Each OAuth2 ApiHub connection gets its own redirect URI. If it is not
+    registered on the app, interactive consent fails with AADSTS50011.
+    These connections hold a client secret (confidential client), so the
+    redirect belongs in web.redirectUris -- NOT publicClient.
+    Returns True on success.
     """
-    sub_id = run("az account show --query id -o tsv")
-    rg = os.environ.get("AZURE_RESOURCE_GROUP", "rg-sf-mcp-obo")
-    cognitive_name = os.environ.get("COGNITIVE_ACCOUNT_NAME", "")
-    project_name = os.environ.get("AI_FOUNDRY_PROJECT_NAME", "")
-    apim_gateway = os.environ.get("APIM_GATEWAY_URL", "")
-    connection_name = "servicenow-obo"
+    app = run(f'az ad app show --id {oauth_client_id}', parse_json=True)
+    if not app or not isinstance(app, dict):
+        return False
+    uris = list((app.get("web") or {}).get("redirectUris") or [])
+    alt = redirect_url.replace(
+        "https://global.consent.azure-apim.net", "https://consent.azure-apim.net"
+    )
+    to_add = [u for u in (redirect_url, alt) if u and u not in uris]
+    if not to_add:
+        print("  Redirect URI already registered on the OAuth app")
+        return True
+    body_file = _write_temp_json({"web": {"redirectUris": uris + to_add}})
+    try:
+        result = subprocess.run(
+            f'az rest --method PATCH '
+            f'--url "https://graph.microsoft.com/v1.0/applications/{app["id"]}" '
+            f'--headers "Content-Type=application/json" '
+            f'--body "@{body_file}"',
+            capture_output=True, text=True, shell=True,
+            encoding="utf-8", errors="replace",
+            env={**os.environ, "MSYS_NO_PATHCONV": "1"},
+        )
+        if result.returncode != 0:
+            print(f"  WARNING: Could not register redirect URI automatically: "
+                  f"{(result.stderr or '').strip()[:300]}")
+            return False
+        print(f"  Registered redirect URI(s) on app {oauth_client_id}: {to_add}")
+        return True
+    finally:
+        os.unlink(body_file)
 
-    if not all([cognitive_name, project_name, apim_gateway]):
-        print("  WARNING: Missing COGNITIVE_ACCOUNT_NAME, AI_FOUNDRY_PROJECT_NAME, or APIM_GATEWAY_URL")
-        print("  Skipping OBO connection creation")
+
+def ensure_obo_connection():
+    """Ensure the SN OBO connection exists as OAuth2 identity passthrough. NEVER
+    deletes or overwrites an existing connection.
+
+    HISTORY (do not regress): since 2026-05-22 Foundry blocks Microsoft-audience
+    tokens to self-hosted MCP endpoints ("Cannot pass Microsoft token to
+    untrusted MCP endpoint"). authType UserEntraToken is therefore dead for
+    custom MCP servers -- OAuth2 identity passthrough backed by an Entra app
+    registration (the same app as the SF project, MCP_OAUTH_CLIENT_ID) is the
+    only supported per-user pattern. A previous version of this function
+    deleted and recreated `servicenow-obo` as UserEntraToken on every azd up.
+    See https://learn.microsoft.com/azure/foundry/agents/how-to/mcp-authentication#oauth-identity-passthrough
+    """
+    connection_name = _sn_obo_connection_name()
+    sn_mcp_obo_endpoint = os.environ.get("APIM_SN_MCP_OBO_ENDPOINT", "")
+    if not sn_mcp_obo_endpoint:
+        apim_gateway = os.environ.get("APIM_GATEWAY_URL", "")
+        if apim_gateway:
+            sn_mcp_obo_endpoint = f"{apim_gateway}/servicenow-mcp-obo/mcp"
+    if not sn_mcp_obo_endpoint:
+        print("  WARNING: No SN MCP OBO endpoint -- skipping connection check")
         return
 
-    target = f"{apim_gateway}/servicenow-mcp-obo/mcp"
-    base_url = (
+    sub_id = run("az account show --query id -o tsv")
+    if not sub_id:
+        print("  WARNING: Could not get subscription ID")
+        return
+
+    rg = os.environ.get("AZURE_RESOURCE_GROUP", "rg-sf-mcp-obo")
+    account = os.environ.get("COGNITIVE_ACCOUNT_NAME", "")
+    project = os.environ.get("AI_FOUNDRY_PROJECT_NAME", "")
+    if not account or not project:
+        print("  WARNING: Missing COGNITIVE_ACCOUNT_NAME or AI_FOUNDRY_PROJECT_NAME "
+              "-- skipping connection check")
+        return
+
+    url = (
         f"https://management.azure.com/subscriptions/{sub_id}"
         f"/resourceGroups/{rg}"
-        f"/providers/Microsoft.CognitiveServices/accounts/{cognitive_name}"
-        f"/projects/{project_name}"
-        f"/connections/{connection_name}"
+        f"/providers/Microsoft.CognitiveServices/accounts/{account}"
+        f"/projects/{project}/connections/{connection_name}"
         f"?api-version=2025-04-01-preview"
     )
 
-    # Delete existing (ignore errors)
-    print(f"  Deleting existing '{connection_name}' connection (if any)...")
-    run(f'az rest --method DELETE --url "{base_url}"')
+    existing = run(f'az rest --method GET --url "{url}"', parse_json=True)
+    if existing and isinstance(existing, dict):
+        auth_type = (existing.get("properties") or {}).get("authType", "")
+        if auth_type == "OAuth2":
+            print(f"  Connection '{connection_name}' exists (OAuth2) -- leaving untouched")
+        else:
+            print(f"  WARNING: Connection '{connection_name}' exists with authType "
+                  f"'{auth_type}' (expected OAuth2).")
+            print("  NOT modifying it automatically. Delete it and re-run, or fix it "
+                  "in the Foundry portal (agents wired to a non-OAuth2 connection "
+                  "fail with the 'untrusted MCP endpoint' error).")
+        return
 
-    # Create connection
-    conn_body = {
+    oauth_client_id = os.environ.get("MCP_OAUTH_CLIENT_ID", "")
+    oauth_client_secret = os.environ.get("MCP_OAUTH_CLIENT_SECRET", "")
+    if not oauth_client_id or not oauth_client_secret:
+        print(f"  WARNING: Connection '{connection_name}' does not exist and "
+              "MCP_OAUTH_CLIENT_ID / MCP_OAUTH_CLIENT_SECRET are not set.")
+        print("  Use the shared Entra app (exposes api://<appId>/access_as_user), then:")
+        print("    azd env set MCP_OAUTH_CLIENT_ID <appId>")
+        print("    azd env set MCP_OAUTH_CLIENT_SECRET <secret>")
+        print("  and re-run this hook. NOT creating a UserEntraToken fallback -- "
+              "Foundry rejects it for custom MCP endpoints.")
+        return
+
+    tenant_id = run("az account show --query tenantId -o tsv")
+    login = f"https://login.microsoftonline.com/{tenant_id}/oauth2/v2.0"
+    body = {
         "properties": {
-            "authType": "UserEntraToken",
+            "authType": "OAuth2",
             "category": "RemoteTool",
-            "target": target,
-            "audience": "https://ai.azure.com",
-            "metadata": {
-                "type": "custom_MCP",
+            "group": "GenericProtocol",
+            "target": sn_mcp_obo_endpoint,
+            "authorizationUrl": f"{login}/authorize",
+            "tokenUrl": f"{login}/token",
+            "refreshUrl": f"{login}/token",
+            "scopes": ["offline_access", f"api://{oauth_client_id}/access_as_user"],
+            "credentials": {
+                "clientId": oauth_client_id,
+                "clientSecret": oauth_client_secret,
             },
-            "isSharedToAll": True,
+            "metadata": {"type": "custom_MCP"},
+            "isSharedToAll": False,
         }
     }
-    body_file = _write_temp_json(conn_body)
+
+    body_file = _write_temp_json(body)
     try:
-        print(f"  Creating '{connection_name}' connection -> {target}")
+        print(f"  Creating OAuth2 connection '{connection_name}' -> {sn_mcp_obo_endpoint}")
         result = run(
-            f'az rest --method PUT --url "{base_url}" '
+            f'az rest --method PUT --url "{url}" '
             f'--headers "Content-Type=application/json" '
             f'--body "@{body_file}"',
             parse_json=True,
         )
-        if result:
-            print(f"  Connection '{connection_name}' created successfully")
-        else:
-            print(f"  WARNING: Failed to create '{connection_name}' connection")
+        if not result:
+            print("  WARNING: Failed to create SN OBO connection")
+            return
+        print("  SN OBO connection created (OAuth2)")
     finally:
         os.unlink(body_file)
+
+    # Register the connection's redirect URI on the OAuth app (AADSTS50011 otherwise).
+    created = run(f'az rest --method GET --url "{url}"', parse_json=True)
+    redirect_url = ""
+    if created and isinstance(created, dict):
+        redirect_url = (created.get("properties") or {}).get("redirectUrl", "") or ""
+    if redirect_url:
+        if not _register_connection_redirect(oauth_client_id, redirect_url):
+            print(f"  ACTION REQUIRED: add '{redirect_url}' (and its "
+                  "consent.azure-apim.net variant) to web.redirectUris of app "
+                  f"{oauth_client_id}, or user consent will fail with AADSTS50011.")
+    else:
+        print("  WARNING: Could not read the connection's redirectUrl -- verify the "
+              f"redirect URI of '{connection_name}' is registered on app "
+              f"{oauth_client_id} before users consent.")
 
 
 # ============================================================================
@@ -495,7 +609,8 @@ def create_memory_store(project_client):
 def create_agent():
     """Create a Foundry agent with the ServiceNow MCP tool using the v2 SDK.
 
-    Uses the OBO connection (UserEntraToken) and the OBO APIM endpoint.
+    Uses the OAuth2 identity-passthrough connection (servicenow-obo-oauth2)
+    and the OBO APIM endpoint.
     Includes MemorySearchPreviewTool for per-user conversational memory.
     Returns the agent version number (for use by create_agent_application).
     """
@@ -510,7 +625,7 @@ def create_agent():
         apim_gateway = os.environ.get("APIM_GATEWAY_URL", "")
         if apim_gateway:
             sn_mcp_endpoint = f"{apim_gateway}/servicenow-mcp-obo/mcp"
-    connection_name = "servicenow-obo"
+    connection_name = _sn_obo_connection_name()
 
     if not sn_mcp_endpoint:
         print("  WARNING: No SN MCP endpoint available -- skipping agent creation.")
@@ -1090,7 +1205,7 @@ def main():
     steps_basic = [
         ("Step 0: Upload cert + APIM binding", upload_cert_and_configure_apim),
         ("Step 1: Update APIM Named Values", update_apim_named_values),
-        ("Step 2: Create Foundry OBO connection", create_obo_connection),
+        ("Step 2: Ensure Foundry OBO connection (OAuth2)", ensure_obo_connection),
     ]
 
     for title, func in steps_basic:

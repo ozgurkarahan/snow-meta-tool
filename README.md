@@ -201,7 +201,7 @@ azd env set AZURE_RESOURCE_GROUP "<existing-resource-group>"
 azd up
 ```
 
-> The `azd provision` step creates: Container App, APIM API + backend + OBO policy, Named Values, Key Vault cert, and AI Foundry connection. The post-provision hook uploads the PFX certificate to Key Vault and configures the APIM certificate binding.
+> The `azd provision` step creates: Container App, APIM API + backend + OBO policy, Named Values, and Key Vault cert. The post-provision hook uploads the PFX certificate to Key Vault, configures the APIM certificate binding, and ensures the OAuth2 Foundry connection `servicenow-obo-oauth2`.
 
 ---
 
@@ -229,7 +229,7 @@ azd up
 | 📄 `src/servicenow-mcp/servicenow_client.py` | Async ServiceNow REST client (JWT auth, caching) |
 | 🐳 `src/servicenow-mcp/Dockerfile` | Multi-stage Docker build |
 | 🏗️ `infra/main.bicep` | Root IaC module (resource-group scoped) |
-| 🏗️ `infra/modules/` | Bicep modules: Container App, APIM API, cert, Foundry connection |
+| 🏗️ `infra/modules/` | Bicep modules: Container App, APIM API, cert |
 | 📜 `infra/policies/` | APIM XML policies: OBO token exchange, PRM metadata |
 | 🔧 `hooks/postprovision.py` | Post-deploy: cert upload, APIM binding, Named Values, Foundry |
 | 🧪 `scripts/test_jwt_bearer.py` | Automated SN instance setup + feasibility test |
@@ -255,7 +255,7 @@ The project deploys into an **existing** resource group alongside the Salesforce
 - 🌐 **APIM API** (`servicenow-mcp-obo`) — native MCP type with OBO policy
 - 🏷️ **APIM Named Values** — SN OAuth client ID, instance URL, JWT kid, cert thumbprint
 - 🔐 **APIM Certificate** — JWT Bearer signing cert (from Key Vault)
-- 🤖 **Foundry Connection** (`servicenow-obo`) — RemoteTool with UserEntraToken auth
+- 🤖 **Foundry Connection** (`servicenow-obo-oauth2`) — RemoteTool with OAuth2 identity passthrough, ensured create-only by the post-provision hook (not Bicep)
 
 ### 🔄 APIM OBO Policy
 

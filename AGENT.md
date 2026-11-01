@@ -20,7 +20,8 @@ API Flow (MCP):
 - **APIM OBO policy** exchanges Azure AD token for a per-user ServiceNow token via JWT Bearer (RS256, cached 25 min)
 - **FastMCP server** exposes 3 tools over MCP Streamable HTTP
 - **ServiceNow client** handles auth (passthrough or self-managed), caching, pagination
-- **AI Foundry connection** registered as RemoteTool with UserEntraToken auth
+- **AI Foundry connection** `servicenow-obo-oauth2` -- RemoteTool with **OAuth2 identity passthrough** (shared Entra app `MCP_OAUTH_CLIENT_ID`, scope `api://<appId>/access_as_user`). Ensured create-only by the postprovision hook, never by Bicep. UserEntraToken is rejected by Foundry for custom MCP endpoints -- do not reintroduce it.
+- **Image preservation**: `azd provision` passes `SERVICE_SERVICENOW_MCP_IMAGE_NAME` to Bicep so `ca-sn-mcp` keeps its deployed image (helloworld only on first provision).
 
 ## Quick Reference
 
@@ -51,7 +52,7 @@ curl /health           # Container App health check
 | `src/servicenow-mcp/app.py` | FastMCP server, 3 tools, BearerTokenMiddleware |
 | `src/servicenow-mcp/servicenow_client.py` | Async SN REST client, JWT auth, caching |
 | `infra/main.bicep` | Root IaC (references existing shared resources) |
-| `infra/modules/` | Container App, APIM API, APIM cert, Foundry connection |
+| `infra/modules/` | Container App, APIM API, APIM cert (Foundry connection is hook-managed) |
 | `infra/policies/sn-mcp-obo-policy.xml` | APIM OBO token exchange policy |
 | `infra/policies/sn-mcp-obo-prm-policy.xml` | RFC 9728 Protected Resource Metadata |
 | `hooks/postprovision.py` | Post-deploy: cert, APIM, connection, agent, app, bot, Teams publish (8 steps) |
@@ -85,7 +86,7 @@ azd env set SN_JWT_BEARER_KID "<kid>"
 azd up
 ```
 
-Post-provision hook automatically (8 steps): uploads PFX to Key Vault, creates APIM cert binding, updates Named Values, creates Foundry connection, creates `servicenow-assistant` agent with MCP + Memory tools, provisions Agent Application, creates Agent Deployment, bootstraps Bot Service + Teams/DirectLine channels, and publishes Teams app to org catalog (requires `AppCatalog.ReadWrite.All`).
+Post-provision hook automatically (8 steps): uploads PFX to Key Vault, creates APIM cert binding, updates Named Values, ensures the `servicenow-obo-oauth2` OAuth2 Foundry connection (create-only, never deletes; needs `MCP_OAUTH_CLIENT_ID` / `MCP_OAUTH_CLIENT_SECRET` in the azd env, registers the connection redirect URI on the Entra app), creates `servicenow-assistant` agent with MCP + Memory tools, provisions Agent Application, creates Agent Deployment, bootstraps Bot Service + Teams/DirectLine channels, and publishes Teams app to org catalog (requires `AppCatalog.ReadWrite.All`).
 
 ## Key Constraints
 
