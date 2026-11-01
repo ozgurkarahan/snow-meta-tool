@@ -2,6 +2,7 @@ import copy
 import importlib.util
 import json
 import sys
+from types import SimpleNamespace
 from pathlib import Path
 from unittest.mock import Mock
 
@@ -176,7 +177,9 @@ def test_bot_only_create_verifies_real_outputs_and_teams_channel(publisher, monk
             "msaAppType": "SingleTenant", "endpoint": publisher.ACTIVITY_ENDPOINT, "publicNetworkAccess": "Disabled",
         },
     }
-    api = Mock(side_effect=[None, None, bot, {"properties": {"channelName": "MsTeamsChannel"}}])
+    api = Mock(side_effect=[None, None, bot, {"properties": {
+        "channelName": "MsTeamsChannel", "properties": {"isEnabled": True},
+    }}])
     az = Mock(side_effect=[
         {"status": "Succeeded", "changes": [
             {"resourceId": bot_id(publisher), "changeType": "Create"},
@@ -194,9 +197,76 @@ def test_bot_only_create_verifies_real_outputs_and_teams_channel(publisher, monk
     assert api.call_args.args[1].endswith("/channels/MsTeamsChannel?api-version=2021-03-01")
 
 
+def test_disabled_existing_teams_channel_blocks_safe_reuse(publisher):
+    bot = {
+        "id": bot_id(publisher), "kind": "azurebot", "location": "global", "sku": {"name": "F0"},
+        "properties": {
+            "msaAppId": publisher.EXPECTED_MSA_APP_ID, "msaAppTenantId": publisher.TENANT,
+            "msaAppType": "SingleTenant", "endpoint": publisher.ACTIVITY_ENDPOINT, "publicNetworkAccess": "Disabled",
+        },
+    }
+    api = Mock(side_effect=[bot, {"properties": {"properties": {"isEnabled": False}}}])
+    with pytest.raises(ValueError, match="Teams channel is not enabled"):
+        publisher.ensure_bot(api, {}, Mock())
+
+
 def test_azure_cli_always_receives_explicit_subscription(publisher, monkeypatch):
     command = Mock(return_value=Mock(returncode=0, stdout="{}", stderr=""))
     monkeypatch.setattr(publisher.subprocess, "run", command)
     publisher.az_json(["deployment", "group", "what-if"])
     arguments = command.call_args.args[0]
     assert arguments[arguments.index("--subscription") + 1] == publisher.SUBSCRIPTION
+
+
+@pytest.mark.parametrize("tools", [False, True])
+def test_protocol_read_is_single_tool_free_request_and_cleans_owned_conversation(publisher, tools):
+    client = Mock()
+    client.conversations.create.return_value = SimpleNamespace(id="owned-protocol")
+    client.conversations.delete.return_value = SimpleNamespace(deleted=True)
+    item = {"type": "mcp_call", "name": "servicenow_toolbox___servicenow_mcp___query"} if tools else {"type": "message"}
+    response = SimpleNamespace(
+        id="protocol-response", status="completed", error=None, output_text="READY",
+        output=[Mock(model_dump=Mock(return_value=item))],
+    )
+    raw = Mock(status_code=200, headers={"x-request-id": "protocol-request"})
+    raw.parse.return_value = response
+    client.responses.with_raw_response.create.return_value = raw
+    client.conversations.items.list.side_effect = lambda **kwargs: [SimpleNamespace(
+        role="user", content=[SimpleNamespace(text=client.responses.with_raw_response.create.call_args.kwargs["input"])],
+    )]
+    result = publisher.protocol_read(client)
+    assert result["results"][0]["status"] == ("FAIL" if tools else "PASS")
+    assert result["conversations_created"] == result["conversations_deleted"] == 1
+    assert client.responses.with_raw_response.create.call_count == 1
+    client.conversations.delete.assert_called_once_with("owned-protocol")
+
+
+def test_final_live_ledger_records_passed_gates_single_publication_and_owned_cleanup(publisher):
+    ledger = json.loads((ROOT / "agents" / "servicenow-v3" / "deployment-ledger.json").read_text(encoding="utf-8"))
+    publisher.validate_e2e(ledger)
+    publication = ledger["teams_publication"]
+    assert publication["status"] == "published"
+    assert publication["current_version_selector"] == publisher.SELECTOR
+    assert publication["current_protocols"] == ["responses", "activity"]
+    assert publication["current_authorization_schemes"] == [
+        {"type": "Entra", "isolation_key_source": {"kind": "Entra"}},
+        {"type": "BotServiceRbac"},
+    ]
+    assert publication["bot_id"] == bot_id(publisher)
+    assert publication["teams_channel_enabled"] is True
+    assert publication["publications_performed"] == publication["bot_deployments_performed"] == 1
+    assert publication["title_id"].startswith("T_")
+    assert publication["publish_scope"] == "Shared"
+    assert publication["publish_as_autopilot"] is False
+    assert publication["app_version"] == "1.0.0"
+    assert publication["post_publish_endpoint_preservation_verified"] is True
+    check = publication["regression_read"]
+    assert check["status"] == "PASS"
+    assert check["tool_calls"] == check["write_calls"] == check["tool_approvals_granted"] == 0
+    assert check["consent_started"] is False
+    assert check["conversations_created"] == check["conversations_deleted"] == 1
+    assert ledger["safeguards"]["child_test_conversations_created_this_phase"] == (
+        ledger["safeguards"]["child_test_conversations_deleted_this_phase"]
+    ) == 10
+    assert ledger["safeguards"]["legacy_bot_unchanged"] is True
+    assert ledger["safeguards"]["root_infra_applied"] is False

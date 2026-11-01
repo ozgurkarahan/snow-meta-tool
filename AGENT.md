@@ -29,7 +29,8 @@ API Flow (MCP):
   confirmation of the exact preview remains mandatory before ANY write.
   `servicenow-assistant` v8 is legacy/rollback. V3 Teams publishing uses an
   identity-matched bot and the agent endpoint, not the legacy Agent Application.
-  The current E2E/owned-incident-cleanup gate blocks publishing.
+  All five v2 E2E gates passed, including exact-owned closure. V3 is published
+  Shared `1.0.0` with endpoint version 2 pinned; legacy Teams remains until user validation.
 
 ## Quick Reference
 
@@ -109,7 +110,9 @@ in this phase. New V3 bot wiring is off by default, with
 The new F0/global/SingleTenant bot has Teams only and uses the V3 agent's
 instance identity and Activity Protocol endpoint. Deploy only its module after
 the E2E gate and create-only bot what-if pass, never the root template. No
-infrastructure apply or V3 publishing was performed while this gate is blocked.
+root infrastructure apply occurred: only the new V3 bot module was deployed after
+the gates passed, followed by preserved-Entra endpoint configuration, a tool-free
+protocol check and Shared publication.
 
 ServiceNow agent-memory provisioning and attachment have been removed from source.
 Do not delete or modify the shared `project-memory` store or its data. V3 is

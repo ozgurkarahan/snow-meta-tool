@@ -85,7 +85,8 @@ Payload: {
 - Canonical agent: `servicenow-assistant-v3` v2 (`gpt-5.4-pro`, Managed Harness).
 - Legacy/rollback: `servicenow-assistant` v8. Its Agent Application route is
   unchanged. Managed Harness V3 publishes through its agent endpoint, not that
-  application; additive publishing is conditional on the version-2 E2E gate.
+  application. V3 was published Shared `1.0.0` after the version-2 E2E gate passed;
+  its endpoint serves immutable version 2 at 100%.
 - V3 has no agent-memory tools or provisioning. The shared `project-memory`
   metadata/data remains untouched.
 - Agent Application clientId: `4d7fd750-bf31-4c67-9e18-cea9d02fb205`
@@ -110,10 +111,10 @@ Payload: {
   UserEntraToken, audience `https://ai.azure.com`. Target and metadata must match
   the exact deployed Toolbox version; never use an unversioned/latest endpoint.
 - Identity resolution is read-only; writes need explicit user confirmation.
-- No new application/bot, endpoint PATCH, Microsoft 365 publish, production route,
-  infrastructure apply or shared memory-store changes. Additive V3 bot wiring
-  is source-only; legacy bot adoption is superseded. Container Apps `memory`
-  remains resource sizing.
+- Only the new V3 bot/Teams module was deployed; no legacy application/bot/agent,
+  production route, root infrastructure or shared memory-store change. Endpoint
+  selector/protocol/auth configuration was updated as approved and published
+  Shared. Legacy bot adoption is superseded; Container Apps `memory` remains sizing.
 - Live Toolbox `servicenow-itsm-v3` and active agent `servicenow-assistant-v3`
   are both version `"2"`; the new UserEntraToken connection has the exact
   version-2 Toolbox endpoint and metadata. Each new version was deployed once;
@@ -148,10 +149,12 @@ Payload: {
 - V2 evidence: identity/read PASS; unconfirmed-write and adversarial guards PASS
   on one authorized continuation after consent restore, zero writes. The original
   guard was a legitimate no-op (urgency already High), not missing confirmation.
-  Exactly one confirmed `INC0010007` was created; closure remains unverified
-  after provider errors and a timed-out 300s closure preview. All 9/9 owned
-  conversations deleted. Admin fallback has no credential context in the child
-  worktree; coordinator-owned exact-sys_id closure proof is required before publish.
+  Exactly one confirmed `INC0010007` was created and later verified state `7`
+  Closed, close_code `Solution provided`, by the coordinator through agent v2
+  using exact-sys_id preview/confirmation and read-back. Its conversation was deleted.
+  All 9/9 child E2E conversations and the one tool-free publication check were
+  deleted (10/10 child-owned this phase). Initial timeout/provider errors remain
+  historical diagnostics, not current unresolved gates.
 - Additive bot: `infra/modules/bot-service.bicep`, off by default; new
   `bot-servicenow-assistant-v3`, F0/global/SingleTenant, network access Disabled,
   Teams only. `msaAppId` must equal V3 `instance_identity.client_id`
@@ -160,11 +163,14 @@ Payload: {
   Never adopt or modify the legacy bot or Teams package for V3.
 - `publish_teams.py`: E2E-gated version-2 FixedRatio pin, create-only bot-scoped
   what-if/deploy, preserved Entra/Responses plus activity/BotServiceRbac, one
-  bounded regression read, then Shared/autopilot-false/appVersion-1.0.0 publish.
+  bounded tool-free READY check, then Shared/autopilot-false/appVersion-1.0.0 publish.
   Persisted exact request/titleId prevents duplicate publication; unknown delivery
   blocks retries. Bot-only what-if passed exactly two new Creates (bot + Teams),
-  no Modify/Delete; no new-bot deploy or publish has run. User validates V3
-  before legacy Teams retirement.
+  no Modify/Delete. New bot module deployed once; publication completed once.
+  `titleId`: `T_945978c8-7204-d12a-d120-90987255c58b`. Bot ARM ID:
+  `/subscriptions/44026b8b-9f88-44d9-8f46-0898baa4bcd5/resourceGroups/rg-sf-mcp-obo/providers/Microsoft.BotService/botServices/bot-servicenow-assistant-v3`.
+  Post-publish GET verified pinned v2, Responses/activity and exact Entra plus
+  BotServiceRbac. User validates V3 before legacy Teams retirement.
 
 ### Foundry connection + provisioning invariants
 

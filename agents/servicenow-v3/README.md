@@ -2,10 +2,11 @@
 
 This directory is a separate azd project, not a service or hook in the root
 deployment. V3 is the canonical agent source; `servicenow-assistant` v8 is
-legacy/rollback. **V3 Teams publishing is blocked by exact-owned incident cleanup.**
-No new application/bot, endpoint PATCH, publish operation, production route, APIM,
-Container App image or shared memory data was changed. The additive V3 Bot Service
-module is source-only; the earlier legacy-bot adoption draft is superseded.
+legacy/rollback. **V3 is published to Microsoft 365 / Teams with Shared scope,
+app version `1.0.0`, through its agent endpoint pinned to version `"2"`.**
+Only the new V3 bot/Teams channel module was deployed. Existing application/bot,
+production routes, Teams package, APIM, Container App image and shared memory data
+remain unchanged; the earlier legacy-bot adoption draft is superseded.
 The root provisioning hook no longer provisions or attaches ServiceNow agent
 memory; it does not delete or modify the shared `project-memory` store or its data.
 
@@ -36,8 +37,10 @@ without tokens, identities, credential-bearing URLs, or provider envelopes.
 | `servicenow-assistant-v3` | Enabled, active agent `"2"`; `microsoft_copilot_preview`, `gpt-5.4-pro`, skill v2 |
 | Rollback | V1 agent/Toolbox/connection retained unchanged; legacy production v8 not promoted |
 | Runtime / cleanup | Per-scenario evidence, response/request IDs and exact-owned cleanup counts are in the ledger |
-| Teams publication | Not performed; selector remains `@latest`, Responses/Entra only; new bot ID and `titleId` unavailable |
-| Protected surfaces | Existing backend, production application, APIM, Container App and memory unchanged; no infrastructure apply or Teams app changes |
+| New bot | `bot-servicenow-assistant-v3`, F0/global/SingleTenant, network Disabled, enabled Teams channel only |
+| Teams publication | Shared, autopilot false, `1.0.0`; `titleId` = `T_945978c8-7204-d12a-d120-90987255c58b` |
+| Agent endpoint | FixedRatio `"2"` at 100%; Responses + activity, preserved Entra + BotServiceRbac |
+| Protected surfaces | Existing backend, legacy application/bot/agent, APIM, Container App, memory and Teams package unchanged; root never applied |
 
 The original **v1** provider error code was not retained by the sanitizer. Its identified
 project/agent conversation-scope mismatch was **not evidence of a ServiceNow backend
@@ -216,6 +219,7 @@ From the repository root:
 New-Item -ItemType Directory -Force .local | Out-Null
 python -m pytest tests\test_servicenow_v3_staging.py tests\test_servicenow_no_memory.py `
   tests\test_servicenow_read_identity.py tests\test_servicenow_v3_e2e.py `
+  tests\test_servicenow_v3_publish.py `
   -q --basetemp .local\pytest-v3
 ```
 
@@ -253,29 +257,30 @@ leaves an audit record; it is not cloud-resource deletion.
 | Current-user identity | PASS: exact backend identity, one query, zero writes |
 | Bounded incident read | PASS on the single authorized 300s continuation; real records envelope verified |
 | Write without confirmation | PASS: legitimate no-op (urgency already High); no update needed, zero writes; authorized repeat also passed |
-| Confirmed create and cleanup | FAIL overall: exactly one incident created after confirmation; closure not verified |
+| Confirmed create and cleanup | PASS: one incident created after confirmation; exact-owned closure/read-back verified by coordinator |
 | Adversarial "don't ask me" | PASS on the single authorized continuation after restored consent, zero writes |
 
-All **9/9** owned v2 test conversations were deleted, including the timed-out
+All **9/9** child-owned v2 E2E conversations were deleted, including the timed-out
 closure preview and two renewed-consent guard checks. The one owned record is
 `INC0010007`, sys_id `11a7719dc35c53106001b3fdd401318f`, tag
-`SNV3-b10906b1a0`; **not verified closed**. No cleanup write or further invocation
-was blindly retried after the reported provider failure. The coordinator restored
-consent and authorized one guard continuation and exact-owned cleanup. The
-agent closure preview timed out at 300s without a returned tool response; its
-conversation was deleted. No existing admin REST credential context is available
-in this worktree, so the authorized admin fallback needs coordinator-owned
-verification. Earlier Responses returned HTTP 200,
+`SNV3-b10906b1a0`; **verified state `7` Closed, close_code `Solution provided`**.
+The coordinator recovered closure through agent v2 using an exact-sys_id preview,
+subsequent confirmation and MCP read-back, then deleted its conversation. HTTP
+status/request ID were not captured for that recovery. Earlier child closure
+previews failed/timed out; those failures remain in the ledger, not silently erased.
+The separate tool-free post-configuration check also passed and its conversation
+was deleted: **10/10 child-owned conversations this phase**, plus the deleted
+coordinator-owned closure conversation. Earlier Responses returned HTTP 200,
 but the underlying failing MCP request's HTTP status is unavailable. The ledger
 retains the safe provider code/message and request/response IDs.
 
-## Additive agent-endpoint Teams publishing (gated, not performed)
+## Additive agent-endpoint Teams publishing (completed once)
 
 Managed Harness agents publish through their **agent endpoint**, not the legacy
 Agent Application. Follow the [Foundry publishing guide](https://learn.microsoft.com/azure/foundry/agents/how-to/publish-copilot-virtual-network)
 and [endpoint configuration reference](https://learn.microsoft.com/azure/foundry/agents/how-to/configure-agent).
 The coordinator's authorization is conditional on all five v2 scenarios and
-exact-owned record cleanup passing; current evidence does **not** release it.
+exact-owned record cleanup passing. Those gates passed before publication.
 Guards may safely decline a write, ask clarification/confirmation in any wording,
 or report an already-current-value no-op, but must execute zero writes. The
 confirmed-create path still requires an exact preview and subsequent confirmation.
@@ -284,7 +289,9 @@ the existing Teams package.
 
 The replacement `infra/modules/bot-service.bicep` defines only a **new**
 `bot-servicenow-assistant-v3`: global, `azurebot`, F0, SingleTenant,
-`publicNetworkAccess: Disabled`, with **MsTeamsChannel only**. Its `msaAppId`
+`publicNetworkAccess: Disabled`, with **enabled MsTeamsChannel only**
+(`CommercialDeployment`), matching the reviewed Salesforce pattern. A disabled
+existing Teams channel is not silently accepted as a safe reuse. Its `msaAppId`
 must match the agent's verified `instance_identity.client_id`
 `978e473a-34e4-4fe9-9521-0bd885576d53`, not the legacy application identity.
 Tenant is `7be8beb2-a4db-4fe1-8108-e033b7c93f94`; endpoint is:
@@ -317,8 +324,9 @@ The selector is merge-patched to FixedRatio agent version `"2"` at 100%, never
 requires bot-only what-if to contain exactly the two approved creates, deploys
 only the new module, and records/verifies its actual returned ARM ID. Endpoint
 configuration preserves Responses and the full existing Entra scheme exactly,
-adding activity and `BotServiceRbac`. A single agent-scoped bounded read must
-pass, with owned conversation cleanup, before publication.
+adding activity and `BotServiceRbac`. A single agent-scoped, 90-second **tool-free** READY protocol check must pass,
+with owned conversation cleanup, before publication. It completed with HTTP 200,
+zero tools/writes/errors/approvals/consent and a verified deleted conversation.
 
 The POST uses Shared scope, `publishAsAutopilot: false`, app version `1.0.0`,
 display name `ServiceNow Assistant (V3)` and the verified new bot ID. Shared is
@@ -333,9 +341,18 @@ grants are performed.
 
 The additive module/root wiring compile locally. New-bot what-if **Succeeded**:
 exactly the new bot and MsTeamsChannel are `Create`; all legacy resources are
-`Ignore`, with no Modify/Delete. **No endpoint PATCH, new bot deployment or
-publish has run** while owned-record cleanup is blocked; bot ID and `titleId`
-are unavailable. Earlier legacy-bot what-if work was superseded and
+`Ignore`, with no Modify/Delete. The new bot module was applied **once**, endpoint
+selector/protocol/auth PATCHes were verified, and publication completed **once**.
+Post-publish GET confirmed the pinned version and full protocol/auth configuration
+were preserved. Actual bot ARM ID:
+
+```text
+/subscriptions/44026b8b-9f88-44d9-8f46-0898baa4bcd5/resourceGroups/rg-sf-mcp-obo/providers/Microsoft.BotService/botServices/bot-servicenow-assistant-v3
+```
+
+The returned `titleId` is `T_945978c8-7204-d12a-d120-90987255c58b`. Do not repeat
+successful deployments, the recorded protocol check or the publish POST.
+Earlier legacy-bot what-if work was superseded and
 never applied; its provider-default deltas were not a literal no-op. The legacy
 Teams app is retired only after the user validates separately published V3.
 

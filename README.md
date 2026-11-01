@@ -14,9 +14,10 @@ on both agent and Toolbox. MCP approval prompts are disabled for Teams; every
 write still requires an exact preview and a subsequent explicit chat confirmation,
 including requests to skip confirmation. `servicenow-assistant` v8 is the
 legacy/rollback target. V3 Teams publishing uses an agent endpoint and a separate
-identity-matched bot, **not the legacy Agent Application**. Publishing remains
-blocked by the v2 E2E/owned-record-cleanup gate; no legacy route or Teams package
-was changed.
+identity-matched bot, **not the legacy Agent Application**. V3 is published Shared
+as `ServiceNow Assistant (V3)`, app version `1.0.0`, with agent v2 pinned at 100%.
+No legacy route or Teams package was changed; retire legacy Teams only after
+user validation of V3.
 
 ## Architecture
 
@@ -271,10 +272,13 @@ immutable Toolbox version, skill, backend and allowlists, and emits a matching
 version-suffixed first-party UserEntraToken connection without Azure writes.
 Existing OAuth2 and v1 rollback connections are preserved. ServiceNow agent-memory
 attachment/provisioning is removed; shared memory data and Container Apps sizing
-remain untouched. The additive V3 bot module is opt-in, Teams-only and source-only.
-The runbook records recovered v2 guards, all 9 owned conversations deleted,
-and one confirmed test incident whose closure remains unverified. No endpoint
-PATCH, new bot apply or Microsoft 365 publish was performed.
+remain untouched. The additive V3 bot module is opt-in and Teams-only.
+The runbook records all five v2 E2E scenarios passing, the one confirmed test
+incident closed/read-back verified, and all 10 child-owned conversations deleted
+(plus the coordinator's closure conversation). Only the new V3 bot/Teams module
+was applied; the agent endpoint is pinned to v2, Entra is preserved alongside
+BotServiceRbac, and the single tool-free check passed before Shared publication.
+Root infrastructure/hooks and legacy routing were not applied or changed.
 
 ### 🔄 APIM OBO Policy
 

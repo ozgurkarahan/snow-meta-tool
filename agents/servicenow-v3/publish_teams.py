@@ -8,7 +8,7 @@ import shutil
 import subprocess
 from pathlib import Path
 
-from e2e import AGENT, PROJECT, SUBSCRIPTION, TENANT, current_user, redact
+from e2e import AGENT, PROJECT, SUBSCRIPTION, TENANT, current_user, redact, turn_evidence
 
 
 ROOT = Path(__file__).resolve().parent
@@ -122,6 +122,46 @@ def publish_once(api, receipt, save, bot_id):
     return result["titleId"]
 
 
+def protocol_read(client):
+    from openai import APIError
+
+    prompt = "Protocol health check only: reply exactly READY. Do not use any tool, skill, or ServiceNow data."
+    result = {"results": [], "cleanup_errors": [], "conversations_created": 0, "conversations_deleted": 0,
+              "consent_started": False, "tool_approvals_granted": 0}
+    conversation = client.conversations.create(metadata={"owner": "sn-v3-publish", "run": "protocol-read"})
+    result["conversations_created"] = 1
+    try:
+        raw = client.responses.with_raw_response.create(conversation=conversation.id, input=prompt)
+        response = raw.parse()
+        evidence, _, answer = turn_evidence(response, raw)
+        passed = (
+            evidence["status"] == "completed" and not evidence["errors"] and not evidence["consent"]
+            and evidence["approval_requests"] == 0 and evidence["tool_calls"] == 0
+            and set(evidence["output_types"]) <= {"message", "reasoning"}
+            and answer.strip() == "READY"
+        )
+        result["results"] = [{"scenario": "tool_free_protocol_read", "status": "PASS" if passed else "FAIL",
+                              "turns": [evidence]}]
+    except (APIError, ValueError) as error:
+        result["fatal_error"] = {
+            "type": type(error).__name__, "message": redact(error), "code": getattr(error, "code", None),
+            "http_status": getattr(error, "status_code", None), "request_id": getattr(error, "request_id", None),
+        }
+    finally:
+        try:
+            items = client.conversations.items.list(conversation_id=conversation.id, limit=100)
+            texts = [content.text for item in items if getattr(item, "role", None) == "user"
+                     for content in getattr(item, "content", []) if getattr(content, "text", None)]
+            if prompt not in texts:
+                raise ValueError("Protocol conversation ownership mismatch; leave untouched")
+            if not client.conversations.delete(conversation.id).deleted:
+                raise ValueError("Protocol conversation deletion not confirmed")
+            result["conversations_deleted"] = 1
+        except (APIError, ValueError) as error:
+            result["cleanup_errors"].append({"message": redact(error)})
+    return result
+
+
 def az_json(arguments):
     command = [shutil.which("az") or "az", *arguments, "--subscription", SUBSCRIPTION, "--output", "json"]
     result = subprocess.run(command, capture_output=True, text=True, encoding="utf-8", errors="replace", check=False)
@@ -148,7 +188,9 @@ def ensure_bot(api, receipt, save):
             raise ValueError("Existing V3 bot contract differs; never overwrite it")
         if bot.get("kind") != "azurebot" or bot.get("location") != "global":
             raise ValueError("Existing V3 bot kind/location differs; leave it untouched")
-        api("GET", path.split("?")[0] + "/channels/MsTeamsChannel?api-version=2021-03-01")
+        channel = api("GET", path.split("?")[0] + "/channels/MsTeamsChannel?api-version=2021-03-01")
+        if channel.get("properties", {}).get("properties", {}).get("isEnabled") is not True:
+            raise ValueError("V3 Teams channel is not enabled; do not publish")
         receipt["bot_id"] = bot["id"]
         save(receipt)
         return bot["id"]
@@ -200,7 +242,7 @@ def main():
     receipt = json.loads(args.receipt.read_text(encoding="utf-8")) if args.receipt.exists() else {}
     import requests
 
-    credential, email = current_user()
+    credential, _ = current_user()
 
     def save(value):
         args.receipt.parent.mkdir(parents=True, exist_ok=True)
@@ -260,16 +302,15 @@ def main():
             receipt["regression_read"] = {"status": "delivery_unknown"}
             save(receipt)
             from azure.ai.projects import AIProjectClient
-            from e2e import run
             with AIProjectClient(endpoint=PROJECT, credential=credential, allow_preview=True) as project:
                 with project.get_openai_client(
-                    agent_name=AGENT, max_retries=0, timeout=300,
+                    agent_name=AGENT, max_retries=0, timeout=90,
                     default_headers={"Foundry-Features": "MicrosoftCopilot=V1Preview"},
                 ) as client:
-                    result = run(client, project, VERSION, "SNV3-publish-read", email, only={"read"})
+                    result = protocol_read(client)
             receipt["regression_read"] = result
             save(receipt)
-            if result.get("fatal_error") or result["cleanup_errors"] or any(
+            if result.get("fatal_error") or result["cleanup_errors"] or not result["results"] or any(
                 case["status"] != "PASS" for case in result["results"]
             ):
                 raise ValueError("Responses regression/consent gate failed; do not publish or retry")

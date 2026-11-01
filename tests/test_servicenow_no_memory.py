@@ -95,6 +95,8 @@ def test_v3_bot_is_additive_opt_in_and_does_not_change_legacy_application():
     assert "agent-bot-sn-mcp-obo" not in module
     assert "trafficRoutingPolicy" not in module
     assert "MsTeamsChannel" in module
+    assert "isEnabled: true" in module
+    assert "deploymentEnvironment: 'CommercialDeployment'" in module
     assert "DirectLineChannel" not in module
     assert "WebChatChannel" not in module
     assert all(field not in module for field in ("key1:", "key2:", "regenerate"))

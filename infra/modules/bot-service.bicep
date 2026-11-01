@@ -37,6 +37,10 @@ resource teamsChannel 'Microsoft.BotService/botServices/channels@2021-03-01' = {
   location: 'global'
   properties: {
     channelName: 'MsTeamsChannel'
+    properties: {
+      isEnabled: true
+      deploymentEnvironment: 'CommercialDeployment'
+    }
   }
 }
 
