@@ -78,3 +78,25 @@ def test_existing_backend_connection_is_never_rewritten(hook, monkeypatch, auth_
     hook.ensure_obo_connection()
     assert len(calls) == 2
     assert not any("--method PUT" in command or "--method DELETE" in command for command in calls)
+
+
+def test_v3_bot_is_additive_opt_in_and_does_not_change_legacy_application():
+    main = (ROOT / "infra" / "main.bicep").read_text(encoding="utf-8")
+    module = (ROOT / "infra" / "modules" / "bot-service.bicep").read_text(encoding="utf-8")
+    assert "param enableServicenowV3Bot bool = false" in main
+    assert "var servicenowV3BotEnabled = enableServicenowV3Bot" in main
+    assert "@minLength(36)\n@maxLength(36)\nparam msaAppId string" in module
+    assert "modules/bot-service.bicep" in main
+    assert "bot-servicenow-assistant-v3" in module
+    assert "name: 'F0'" in module
+    assert "publicNetworkAccess: 'Disabled'" in module
+    assert "/agents/servicenow-assistant-v3/endpoint/protocols/activityProtocol?api-version=v1" in main
+    assert "applications/" not in module
+    assert "agent-bot-sn-mcp-obo" not in module
+    assert "trafficRoutingPolicy" not in module
+    assert "MsTeamsChannel" in module
+    assert "DirectLineChannel" not in module
+    assert "WebChatChannel" not in module
+    assert all(field not in module for field in ("key1:", "key2:", "regenerate"))
+    assert "existingProperties" not in main
+    assert "application/json" not in module

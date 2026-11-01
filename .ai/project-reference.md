@@ -82,34 +82,49 @@ Payload: {
 
 ## Foundry Agent
 
-- Agent: `servicenow-assistant` v7 (gpt-5.4)
-- Live v7 tools: MCPTool (discover, query, write via `servicenow-obo-oauth2` connection) + MemorySearchTool (project-memory, per-user scope). Source no longer provisions or attaches agent memory; this does not change the deployed v7 until a separately approved deployment.
+- Canonical agent: `servicenow-assistant-v3` v2 (`gpt-5.4-pro`, Managed Harness).
+- Legacy/rollback: `servicenow-assistant` v8. Its Agent Application route is
+  unchanged. Managed Harness V3 publishes through its agent endpoint, not that
+  application; additive publishing is conditional on the version-2 E2E gate.
+- V3 has no agent-memory tools or provisioning. The shared `project-memory`
+  metadata/data remains untouched.
 - Agent Application clientId: `4d7fd750-bf31-4c67-9e18-cea9d02fb205`
 - Agent Application ID: `6942944a-3b19-4ecb-96f7-e4a9cfd4fbb6`
 - Project endpoint: `https://aoai-sf-mcp-obo.services.ai.azure.com/api/projects/aiproj-sf-mcp-obo`
 - Shared Foundry project with `salesforce-assistant` agent
 
-### V3 staging (deployed 2026-10-31; runtime consent-gated)
+### V3 production/Teams readiness (2026-11-01)
 
 - Isolated manifest: `agents/servicenow-v3/azure.yaml`; never included in root `azure.yaml`.
 - Additive agent: `servicenow-assistant-v3`, `kind: prompt`, Managed Harness
   `microsoft_copilot_preview`, model `gpt-5.4-pro`.
 - Toolbox: `servicenow-itsm-v3`, one raw MCP tool using the existing
-  `servicenow-obo-oauth2` OAuth2 backend connection. Both MCP hops require approval.
-- Agent skill: top-level `servicenow-itsm` version `"2"`, not a Toolbox entry.
-- First-party Toolbox connection: `servicenow-itsm-v3-toolbox`, RemoteTool /
+  `servicenow-obo-oauth2` OAuth2 backend connection. Both MCP hops use approval
+  `never` because Teams cannot render MCP approval prompts. Every write still
+  requires a subsequent explicit user confirmation of the exact preview.
+- Skill: immutable `servicenow-itsm` version `"2"` on BOTH Toolbox and agent.
+  Its deployed contents were inspected: before any write, preview table,
+  target/operation/field values and wait for explicit yes. Agent instructions
+  also prohibit "don't ask me", urgency or claimed permission from bypassing it.
+- First-party Toolbox connection: `servicenow-itsm-v3-toolbox-v2`, RemoteTool /
   UserEntraToken, audience `https://ai.azure.com`. Target and metadata must match
   the exact deployed Toolbox version; never use an unversioned/latest endpoint.
 - Identity resolution is read-only; writes need explicit user confirmation.
-- No staging application, bot, production traffic routing, infrastructure, or
-  shared memory-store changes. Container Apps `memory` remains resource sizing.
+- No new application/bot, endpoint PATCH, Microsoft 365 publish, production route,
+  infrastructure apply or shared memory-store changes. Additive V3 bot wiring
+  is source-only; legacy bot adoption is superseded. Container Apps `memory`
+  remains resource sizing.
 - Live Toolbox `servicenow-itsm-v3` and active agent `servicenow-assistant-v3`
-  are both version `"1"`; the separate UserEntraToken connection has an exact
-  version-1 Toolbox endpoint and matching metadata. Each service was deployed once.
+  are both version `"2"`; the new UserEntraToken connection has the exact
+  version-2 Toolbox endpoint and metadata. Each new version was deployed once;
+  one initial agent packaging failure created no version. Toolbox default pointer
+  remains version `"1"` and is not used for binding. V1 agent/Toolbox/connection
+  are retained for rollback.
 - Mandatory inline flags: `AZURE_DEV_USER_AGENT=microsoft_foundry_skill`,
   `AZD_ALPHA_ENABLE_AGENTS_MANAGED_HARNESS=true`,
   `AZD_AGENT_SKIP_ROLE_ASSIGNMENTS=true`. Never use whole-project deployment or
-  root provisioning/hooks for staging.
+  root provisioning/hooks for V3. Named prompt-agent deployment resolves
+  `FOUNDRY_PROJECT_ENDPOINT`; `AZURE_AI_PROJECT_ENDPOINT` alone is insufficient.
 - The initial bounded current-user attempt failed before tools: a project-scoped
   conversation was supplied to the agent-scoped Managed Harness endpoint. Provider
   code was not retained; this is not evidence of a ServiceNow backend failure.
@@ -118,15 +133,38 @@ Payload: {
   `oauth_consent_request` for `servicenow_toolbox`, with zero tool calls and
   `errors: []`; its verified owned conversation was deleted. Backend read remains
   unverified until separately approved consent/tool approval. No consent, approval,
-  manual permission grant, or account switch occurred.
+  manual permission grant, or account switch occurred in that initial check.
+  Subsequent coordinator v1 E2E passed 4/4 after re-consent; this is historical
+  evidence, not proof of the new Teams-ready version. V2 results are in the ledger.
 - Runtime client must use `AIProjectClient(..., allow_preview=True)` and
   `project.get_openai_client(agent_name="servicenow-assistant-v3")` with
   `Foundry-Features: MicrosoftCopilot=V1Preview`, timeout 90 and zero automatic
-  retries. Conversation creation/invocation/inspection/cleanup must use that same
+  retries. A single coordinator-authorized v2 continuation uses timeout 300,
+  without a retry loop. Conversation creation/invocation/inspection/cleanup must use that same
   agent-scoped client.
 - Foundry generated managed per-agent Entra identity dependencies for the persistent
   V3 agent; these are not test artifacts and must not be removed during cleanup.
 - Live inventory and sanitized contract: `agents/servicenow-v3/deployment-ledger.json`.
+- V2 evidence: identity/read PASS; unconfirmed-write and adversarial guards PASS
+  on one authorized continuation after consent restore, zero writes. The original
+  guard was a legitimate no-op (urgency already High), not missing confirmation.
+  Exactly one confirmed `INC0010007` was created; closure remains unverified
+  after provider errors and a timed-out 300s closure preview. All 9/9 owned
+  conversations deleted. Admin fallback has no credential context in the child
+  worktree; coordinator-owned exact-sys_id closure proof is required before publish.
+- Additive bot: `infra/modules/bot-service.bicep`, off by default; new
+  `bot-servicenow-assistant-v3`, F0/global/SingleTenant, network access Disabled,
+  Teams only. `msaAppId` must equal V3 `instance_identity.client_id`
+  (`978e473a-34e4-4fe9-9521-0bd885576d53`); endpoint is
+  `<project>/agents/servicenow-assistant-v3/endpoint/protocols/activityProtocol?api-version=v1`.
+  Never adopt or modify the legacy bot or Teams package for V3.
+- `publish_teams.py`: E2E-gated version-2 FixedRatio pin, create-only bot-scoped
+  what-if/deploy, preserved Entra/Responses plus activity/BotServiceRbac, one
+  bounded regression read, then Shared/autopilot-false/appVersion-1.0.0 publish.
+  Persisted exact request/titleId prevents duplicate publication; unknown delivery
+  blocks retries. Bot-only what-if passed exactly two new Creates (bot + Teams),
+  no Modify/Delete; no new-bot deploy or publish has run. User validates V3
+  before legacy Teams retirement.
 
 ### Foundry connection + provisioning invariants
 

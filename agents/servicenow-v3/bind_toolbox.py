@@ -15,6 +15,10 @@ AGENT_NAME = "servicenow-assistant-v3"
 CONNECTION_NAME = "servicenow-itsm-v3-toolbox"
 
 
+def toolbox_connection_name(version):
+    return CONNECTION_NAME if version == "1" else f"{CONNECTION_NAME}-v{version}"
+
+
 def prepare_binding(toolbox_document, version, project_endpoint, existing_connection=None):
     if not isinstance(version, str) or not re.fullmatch(r"[1-9][0-9]*", version):
         raise ValueError("An explicit positive integer Toolbox version is required; latest is not supported.")
@@ -57,8 +61,20 @@ def prepare_binding(toolbox_document, version, project_endpoint, existing_connec
         deployed_tool.get(key) != value for key, value in expected_tools[0].items()
     ):
         raise ValueError("Toolbox tools must match the staged OAuth2 backend, approval policy, and exact allowlist.")
-    if deployed_version.get("skills") != []:
-        raise ValueError("Toolbox skills must be empty; servicenow-itsm version 2 belongs on the agent.")
+    expected_skills = manifest["services"][TOOLBOX_NAME]["skills"]
+    deployed_skills = deployed_version.get("skills")
+    if (
+        not isinstance(deployed_skills, list)
+        or len(deployed_skills) != len(expected_skills)
+        or any(
+            not isinstance(actual, dict)
+            or any(actual.get(key) != value for key, value in expected.items())
+            or actual.get("type", "skill_reference") != "skill_reference"
+            for actual, expected in zip(deployed_skills, expected_skills)
+        )
+    ):
+        raise ValueError("Toolbox skills must match the pinned servicenow-itsm skill on the agent.")
+    connection_name = toolbox_connection_name(version)
 
     connection = {
         "properties": {
@@ -75,8 +91,8 @@ def prepare_binding(toolbox_document, version, project_endpoint, existing_connec
         },
     }
     if existing_connection is not None:
-        if not isinstance(existing_connection, dict) or existing_connection.get("name") != CONNECTION_NAME:
-            raise ValueError(f"Existing connection must identify {CONNECTION_NAME}; never replace another connection.")
+        if not isinstance(existing_connection, dict) or existing_connection.get("name") != connection_name:
+            raise ValueError(f"Existing connection must identify {connection_name}; never replace another connection.")
         properties = existing_connection.get("properties")
         if not isinstance(properties, dict):
             raise ValueError("Existing Toolbox connection has no properties.")
@@ -92,6 +108,7 @@ def prepare_binding(toolbox_document, version, project_endpoint, existing_connec
     # Deploy the bound agent alone so its immutable Toolbox version is not recreated.
     agent = manifest["services"][AGENT_NAME]
     agent["tools"][0]["server_url"] = endpoint
+    agent["tools"][0]["project_connection_id"] = connection_name
     manifest["services"] = {AGENT_NAME: agent}
     return manifest, connection
 
@@ -137,6 +154,7 @@ def main():
     except (OSError, ValueError, yaml.YAMLError) as error:
         parser.error(str(error))
     print(f"Verified Toolbox endpoint: {connection['properties']['target']}")
+    print(f"Version-bound connection: {toolbox_connection_name(args.version)}")
     print(f"Bound agent manifest and new connection payload written to {output_dir}")
     print("No Azure resources were changed. Reuse a matching connection unchanged; create only if absent.")
 

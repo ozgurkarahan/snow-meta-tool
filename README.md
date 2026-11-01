@@ -8,6 +8,16 @@
 
 MCP server exposing ServiceNow as **3 generic tools** (`discover`, `query`, `write`) with **per-user identity propagation**. An AI agent discovers tables and fields at runtime, then queries and writes records **as the authenticated user** — no service account, no shared credentials.
 
+**Canonical agent:** [ServiceNow V3](agents/servicenow-v3/README.md), a Managed
+Harness prompt agent using `gpt-5.4-pro`, Toolbox v2 and `servicenow-itsm` skill v2
+on both agent and Toolbox. MCP approval prompts are disabled for Teams; every
+write still requires an exact preview and a subsequent explicit chat confirmation,
+including requests to skip confirmation. `servicenow-assistant` v8 is the
+legacy/rollback target. V3 Teams publishing uses an agent endpoint and a separate
+identity-matched bot, **not the legacy Agent Application**. Publishing remains
+blocked by the v2 E2E/owned-record-cleanup gate; no legacy route or Teams package
+was changed.
+
 ## Architecture
 
 <img src="docs/diagrams/azure-architecture.png" alt="Azure Architecture — Identity-Propagated MCP Meta-Tools">
@@ -227,7 +237,7 @@ azd up
 | 📄 `src/servicenow-mcp/servicenow_client.py` | Async ServiceNow REST client (JWT auth, caching) |
 | 🐳 `src/servicenow-mcp/Dockerfile` | Multi-stage Docker build |
 | 🏗️ `infra/main.bicep` | Root IaC module (resource-group scoped) |
-| 🏗️ `infra/modules/` | Bicep modules: Container App, APIM API, cert |
+| 🏗️ `infra/modules/` | Bicep modules: Container App, APIM API, cert, opt-in additive V3 Bot Service |
 | 📜 `infra/policies/` | APIM XML policies: OBO token exchange, PRM metadata |
 | 🔧 `hooks/postprovision.py` | Post-deploy: cert upload, APIM binding, Named Values, Foundry |
 | 🧪 `scripts/test_jwt_bearer.py` | Automated SN instance setup + feasibility test |
@@ -255,13 +265,16 @@ The project deploys into an **existing** resource group alongside the Salesforce
 - 🔐 **APIM Certificate** — JWT Bearer signing cert (from Key Vault)
 - 🤖 **Foundry Connection** (`servicenow-obo-oauth2`) — RemoteTool with OAuth2 identity passthrough, ensured create-only by the post-provision hook (not Bicep)
 
-**V3 staging source** is isolated in [agents/servicenow-v3](agents/servicenow-v3/README.md):
-an additive Managed Harness prompt agent (`gpt-5.4-pro`) with an exact-version
-Toolbox MCP endpoint and the agent-level `servicenow-itsm` skill v2. Root deployment
-does not include it or change production routing. The staging binder verifies the
-Toolbox version and emits a matching new first-party connection payload without
-Azure writes. ServiceNow agent-memory attachment/provisioning is removed from
-source; the shared memory store and Container Apps memory sizing are untouched.
+**V3 deployment** stays isolated in [agents/servicenow-v3](agents/servicenow-v3/README.md);
+root deployment does not include its agent or Toolbox. The binder verifies the
+immutable Toolbox version, skill, backend and allowlists, and emits a matching
+version-suffixed first-party UserEntraToken connection without Azure writes.
+Existing OAuth2 and v1 rollback connections are preserved. ServiceNow agent-memory
+attachment/provisioning is removed; shared memory data and Container Apps sizing
+remain untouched. The additive V3 bot module is opt-in, Teams-only and source-only.
+The runbook records recovered v2 guards, all 9 owned conversations deleted,
+and one confirmed test incident whose closure remains unverified. No endpoint
+PATCH, new bot apply or Microsoft 365 publish was performed.
 
 ### 🔄 APIM OBO Policy
 

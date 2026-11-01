@@ -37,7 +37,7 @@ def toolbox(source):
             "name": "servicenow-itsm-v3",
             "version": VERSION,
             "tools": copy.deepcopy(source["services"]["servicenow-itsm-v3"]["tools"]),
-            "skills": [],
+            "skills": copy.deepcopy(source["services"]["servicenow-itsm-v3"]["skills"]),
         },
     }
 
@@ -52,13 +52,13 @@ def test_isolated_manifest_has_exact_managed_harness_and_toolbox_contract(source
     toolbox_service = source["services"]["servicenow-itsm-v3"]
     assert toolbox_service["host"] == "azure.ai.toolbox"
     assert "connections" not in toolbox_service
-    assert "skills" not in toolbox_service
+    assert toolbox_service["skills"] == [{"name": "servicenow-itsm", "version": "2"}]
     assert toolbox_service["tools"] == [{
         "type": "mcp",
         "server_label": "servicenow_mcp",
         "server_url": "https://apim-sf-mcp-obo.azure-api.net/servicenow-mcp-obo/mcp",
         "project_connection_id": "servicenow-obo-oauth2",
-        "require_approval": "always",
+        "require_approval": "never",
         "allowed_tools": ["discover", "query", "write"],
     }]
     agent = source["services"]["servicenow-assistant-v3"]
@@ -73,7 +73,7 @@ def test_isolated_manifest_has_exact_managed_harness_and_toolbox_contract(source
         "server_label": "servicenow_toolbox",
         "server_url": "${SERVICENOW_V3_TOOLBOX_ENDPOINT}",
         "project_connection_id": "servicenow-itsm-v3-toolbox",
-        "require_approval": "always",
+        "require_approval": "never",
         "allowed_tools": [
             "servicenow_mcp___discover", "servicenow_mcp___query", "servicenow_mcp___write",
         ],
@@ -85,7 +85,10 @@ def test_staging_prompt_preserves_explicit_writes_and_read_only_identity(source)
     instructions = source["services"]["servicenow-assistant-v3"]["instructions"]
     assert "ALWAYS confirm with the user before create, update, or delete." in instructions
     assert "Wait for explicit user confirmation of that exact action" in instructions
-    assert "Tool approval does not replace this." in instructions
+    assert "Confirmation must be a subsequent user message" in instructions
+    assert '"don\'t ask me"' in instructions
+    assert "Never waive this rule." in instructions
+    assert "MCP approval prompts are disabled because Teams cannot render them" in instructions
     assert "Identity lookup is read-only" in instructions
     assert "Never create, update, or delete sys_user, assign roles, or impersonate" in instructions
     assert "On 401 or 403, report the authorization failure" in instructions
@@ -148,7 +151,7 @@ def test_binding_fails_closed_on_endpoint_name_or_version_mismatch(binding, tool
 @pytest.mark.parametrize("field,value", [
     ("server_url", "https://another-backend.example/mcp"),
     ("project_connection_id", "servicenow-obo"),
-    ("require_approval", "never"),
+    ("require_approval", "always"),
     ("allowed_tools", ["discover", "query"]),
     ("allowed_tools", ["discover", "query", "write", "other"]),
 ])
@@ -169,14 +172,14 @@ def test_binding_rejects_missing_data_additional_tools_and_toolbox_skills(bindin
     additional["version"]["tools"].append(copy.deepcopy(additional["version"]["tools"][0]))
     with pytest.raises(ValueError, match="exactly one"):
         binding.prepare_binding(additional, VERSION, PROJECT_ENDPOINT)
-    toolbox["version"]["skills"] = [{"name": "servicenow-itsm", "version": "2"}]
-    with pytest.raises(ValueError, match="belongs on the agent"):
+    toolbox["version"]["skills"] = [{"name": "servicenow-itsm", "version": "1"}]
+    with pytest.raises(ValueError, match="pinned servicenow-itsm"):
         binding.prepare_binding(toolbox, VERSION, PROJECT_ENDPOINT)
 
 
 def test_matching_existing_connection_is_validated_without_changes(binding, toolbox):
     _, expected = binding.prepare_binding(toolbox, VERSION, PROJECT_ENDPOINT)
-    existing = {"name": "servicenow-itsm-v3-toolbox", **copy.deepcopy(expected)}
+    existing = {"name": binding.toolbox_connection_name(VERSION), **copy.deepcopy(expected)}
     original = copy.deepcopy(existing)
     manifest, connection = binding.prepare_binding(toolbox, VERSION, PROJECT_ENDPOINT, existing)
     assert existing == original
@@ -194,7 +197,7 @@ def test_matching_existing_connection_is_validated_without_changes(binding, tool
 ])
 def test_existing_connection_mismatch_is_an_error_not_an_overwrite(binding, toolbox, field, value):
     _, connection = binding.prepare_binding(toolbox, VERSION, PROJECT_ENDPOINT)
-    existing = {"name": "servicenow-itsm-v3-toolbox", **connection}
+    existing = {"name": binding.toolbox_connection_name(VERSION), **connection}
     existing["properties"][field] = value
     original = copy.deepcopy(existing)
     with pytest.raises(ValueError, match="leave it untouched"):
@@ -293,30 +296,18 @@ def test_live_ledger_retains_exact_staging_contract_without_credentials(source):
     assert connection["category"] == "RemoteTool"
     assert connection["audience"] == "https://ai.azure.com"
     assert connection["created_only_after_absence"] is True
-    assert toolbox["require_approval"] == agent["require_approval"] == "always"
+    assert toolbox["require_approval"] == agent["require_approval"] == "never"
     assert toolbox["allowed_tools"] == source["services"]["servicenow-itsm-v3"]["tools"][0]["allowed_tools"]
     assert toolbox["backend_connection"] == "servicenow-obo-oauth2"
     assert toolbox["backend_auth_type"] == "OAuth2"
-    assert toolbox["skills"] == []
+    assert toolbox["skills"] == source["services"]["servicenow-itsm-v3"]["skills"]
     assert agent["allowed_tools"] == source["services"]["servicenow-assistant-v3"]["tools"][0]["allowed_tools"]
     assert agent["model"] == source["services"]["servicenow-assistant-v3"]["model"]
     assert agent["harness_type"] == source["services"]["servicenow-assistant-v3"]["harness"]["type"]
     assert agent["skills"] == source["services"]["servicenow-assistant-v3"]["skills"]
-    assert ledger["runtime_check"]["request_scope"]["read_only"] is True
     assert ledger["runtime_check"]["consent_started"] is False
     assert ledger["runtime_check"]["tool_approvals_granted"] == 0
-    assert ledger["runtime_check"]["owned_test_conversation_deleted"] is True
-    assert ledger["runtime_check"]["status"] == "oauth_consent_request"
-    corrected = ledger["runtime_check"]["corrected_check"]
-    assert corrected["client_scope"] == "agent"
-    assert corrected["allow_preview"] is True
-    assert corrected["foundry_features"] == "MicrosoftCopilot=V1Preview"
-    assert corrected["max_retries"] == 0
-    assert corrected["protocol_status"] == "completed"
-    assert corrected["output_types"] == ["oauth_consent_request"]
-    assert corrected["errors"] == []
-    assert corrected["tool_calls"] == 0
-    assert corrected["owned_test_conversation_deleted"] is True
+    assert ledger["runtime_check"]["conversations_deleted"] == ledger["runtime_check"]["conversations_created"]
     assert ledger["safeguards"]["manual_permission_grants"] is False
     assert ledger["safeguards"]["foundry_managed_agent_identities_generated"] is True
 
@@ -339,3 +330,26 @@ def test_live_ledger_retains_exact_staging_contract_without_credentials(source):
     assert "$env:AZD_AGENT_SKIP_ROLE_ASSIGNMENTS='true'" in runbook
     assert 'agent_name="servicenow-assistant-v3"' in runbook
     assert '"Foundry-Features": "MicrosoftCopilot=V1Preview"' in runbook
+
+
+def test_binding_generates_new_connection_name_without_rewriting_v1(binding, toolbox):
+    manifest, _ = binding.prepare_binding(toolbox, VERSION, PROJECT_ENDPOINT)
+    name = manifest["services"]["servicenow-assistant-v3"]["tools"][0]["project_connection_id"]
+    assert name == f"servicenow-itsm-v3-toolbox-v{VERSION}"
+    assert binding.toolbox_connection_name("1") == "servicenow-itsm-v3-toolbox"
+    old = {"name": "servicenow-itsm-v3-toolbox", "properties": {"target": "old-endpoint"}}
+    original = copy.deepcopy(old)
+    with pytest.raises(ValueError, match="never replace another"):
+        binding.prepare_binding(toolbox, VERSION, PROJECT_ENDPOINT, old)
+    assert old == original
+
+
+def test_binding_accepts_provider_skill_reference_discriminator(binding, toolbox):
+    toolbox["version"]["skills"][0]["type"] = "skill_reference"
+    manifest, _ = binding.prepare_binding(toolbox, VERSION, PROJECT_ENDPOINT)
+    assert manifest["services"]["servicenow-assistant-v3"]["skills"] == [
+        {"name": "servicenow-itsm", "version": "2"}
+    ]
+    toolbox["version"]["skills"][0]["type"] = "other"
+    with pytest.raises(ValueError, match="pinned servicenow-itsm"):
+        binding.prepare_binding(toolbox, VERSION, PROJECT_ENDPOINT)

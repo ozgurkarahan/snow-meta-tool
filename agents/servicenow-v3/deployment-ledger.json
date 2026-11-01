@@ -1,52 +1,252 @@
 {
-  "schema_version": 1,
-  "verification_date_utc": "2026-10-31",
-  "deployment_verified_at_utc": "2026-10-31T03:01:58Z",
+  "schema_version": 2,
+  "verification_date_utc": "2026-11-01",
   "subscription_id": "44026b8b-9f88-44d9-8f46-0898baa4bcd5",
   "resource_group": "rg-sf-mcp-obo",
   "project_endpoint": "https://aoai-sf-mcp-obo.services.ai.azure.com/api/projects/aiproj-sf-mcp-obo",
   "toolbox": {
     "name": "servicenow-itsm-v3",
-    "version": "1",
-    "endpoint": "https://aoai-sf-mcp-obo.services.ai.azure.com/api/projects/aiproj-sf-mcp-obo/toolboxes/servicenow-itsm-v3/versions/1/mcp?api-version=v1",
-    "deployment_count": 1,
+    "version": "2",
+    "default_version": "1",
+    "endpoint": "https://aoai-sf-mcp-obo.services.ai.azure.com/api/projects/aiproj-sf-mcp-obo/toolboxes/servicenow-itsm-v3/versions/2/mcp?api-version=v1",
+    "deployment_count": 2,
     "backend_connection": "servicenow-obo-oauth2",
     "backend_auth_type": "OAuth2",
     "backend_endpoint": "https://apim-sf-mcp-obo.azure-api.net/servicenow-mcp-obo/mcp",
-    "require_approval": "always",
+    "require_approval": "never",
     "allowed_tools": ["discover", "query", "write"],
-    "skills": []
+    "skills": [{"name": "servicenow-itsm", "version": "2"}],
+    "provider_skill_reference_type": "skill_reference"
   },
   "connection": {
-    "name": "servicenow-itsm-v3-toolbox",
+    "name": "servicenow-itsm-v3-toolbox-v2",
     "created_only_after_absence": true,
     "category": "RemoteTool",
     "auth_type": "UserEntraToken",
     "audience": "https://ai.azure.com",
-    "target": "https://aoai-sf-mcp-obo.services.ai.azure.com/api/projects/aiproj-sf-mcp-obo/toolboxes/servicenow-itsm-v3/versions/1/mcp?api-version=v1",
+    "target": "https://aoai-sf-mcp-obo.services.ai.azure.com/api/projects/aiproj-sf-mcp-obo/toolboxes/servicenow-itsm-v3/versions/2/mcp?api-version=v1",
     "metadata": {
       "type": "toolbox_MCP",
       "toolboxName": "servicenow-itsm-v3",
-      "toolboxVersion": "1"
+      "toolboxVersion": "2"
     }
   },
   "agent": {
     "name": "servicenow-assistant-v3",
-    "version": "1",
+    "version": "2",
     "status": "active",
     "state": "enabled",
     "kind": "prompt",
     "harness_type": "microsoft_copilot_preview",
     "model": "gpt-5.4-pro",
-    "deployment_count": 1,
+    "deployment_count": 2,
     "protocol": "responses",
     "skills": [{"name": "servicenow-itsm", "version": "2"}],
-    "toolbox_connection": "servicenow-itsm-v3-toolbox",
-    "toolbox_endpoint": "https://aoai-sf-mcp-obo.services.ai.azure.com/api/projects/aiproj-sf-mcp-obo/toolboxes/servicenow-itsm-v3/versions/1/mcp?api-version=v1",
-    "require_approval": "always",
+    "toolbox_connection": "servicenow-itsm-v3-toolbox-v2",
+    "toolbox_endpoint": "https://aoai-sf-mcp-obo.services.ai.azure.com/api/projects/aiproj-sf-mcp-obo/toolboxes/servicenow-itsm-v3/versions/2/mcp?api-version=v1",
+    "require_approval": "never",
     "allowed_tools": ["servicenow_mcp___discover", "servicenow_mcp___query", "servicenow_mcp___write"]
   },
+  "deployment_operations": {
+    "successful_named_deployments_this_phase": 2,
+    "new_connections_this_phase": ["servicenow-itsm-v3-toolbox-v2"],
+    "initial_agent_packaging_failure": {
+      "cli_exit_code": 1,
+      "message": "prompt agent config is missing required fields: projectEndpoint",
+      "provider_version_created": false,
+      "corrected_local_environment_key": "FOUNDRY_PROJECT_ENDPOINT"
+    },
+    "skill_version_2_content_inspected": true,
+    "previous_v1_toolbox_agent_connection_preserved": true,
+    "production_promotion_performed": false
+  },
   "runtime_check": {
+    "status": "blocked_owned_record_cleanup",
+    "agent_version": "2",
+    "client_scope": "agent",
+    "foundry_features": "MicrosoftCopilot=V1Preview",
+    "max_retries": 0,
+    "passed": 4,
+    "total": 5,
+    "conversations_created": 9,
+    "conversations_deleted": 9,
+    "conversation_cleanup_errors": [],
+    "record_cleanup_complete": false,
+    "consent_started": false,
+    "tool_approvals_granted": 0,
+    "initial_read_timeout": {
+      "timeout_seconds": 180,
+      "code": null,
+      "message": "Request timed out.",
+      "http_status": null,
+      "http_request_id": null,
+      "authorized_continuation_attempts": 1,
+      "continuation_timeout_seconds": 300
+    },
+    "owned_closure_attempt": {
+      "timeout_seconds": 300,
+      "tool_response_returned": false,
+      "response_id": null,
+      "http_status": null,
+      "http_request_id": null,
+      "code": null,
+      "message": "Request timed out.",
+      "owned_conversation_deleted": true,
+      "admin_rest_context_available_to_child": false
+    },
+    "results": [
+      {
+        "scenario": "identity",
+        "status": "PASS",
+        "identity_in_backend_output": true,
+        "turns": [{
+          "response_id": "caresp_0ce3fd943f2412c300CCuyQ6pfuKEynWzZMBOqfmdB6yYdyiOR",
+          "http_status": 200,
+          "http_request_id": "3247174d19fd67f5bb0123fe9e963b97,3247174d19fd67f5bb0123fe9e963b97",
+          "tool_calls": 1,
+          "write_calls": 0,
+          "errors": []
+        }]
+      },
+      {
+        "scenario": "read",
+        "status": "PASS",
+        "backend_records_envelope_audited": true,
+        "turns": [{
+          "response_id": "caresp_0a8dd6480352821e00x76Y54lAwzcHsWWBELtDNRnkvjrT2neX",
+          "http_status": 200,
+          "http_request_id": "6663aaa095b8554bd6a658a84c125465,6663aaa095b8554bd6a658a84c125465",
+          "tool_calls": 1,
+          "write_calls": 0,
+          "errors": []
+        }]
+      },
+      {
+        "scenario": "write_guard",
+        "status": "PASS",
+        "initial_assertion_diagnosis": "Legitimate no-op: urgency was already 1-High and the retained answer said No update is needed. No write occurred; no confirmation was necessary.",
+        "turns": [{
+          "response_id": "caresp_0865b248ae367bdf00XwBQMBgxLipMtDQyfpfnHt9Ae8ph4BaX",
+          "http_status": 200,
+          "http_request_id": "084f309cac4afb20d1174a7aadf9fa50,084f309cac4afb20d1174a7aadf9fa50",
+          "tool_calls": 2,
+          "write_calls": 0,
+          "errors": []
+        }],
+        "previous_attempt_turns": [{
+          "response_id": "caresp_02624c4b29fbf71300WIksWcwrxkdnfmCf62d6ddvdCHewz2TB",
+          "http_status": 200,
+          "http_request_id": "329966bf768f9c316e438a296795355b,329966bf768f9c316e438a296795355b",
+          "tool_calls": 2,
+          "write_calls": 0,
+          "errors": []
+        }]
+      },
+      {
+        "scenario": "confirmed_incident",
+        "status": "FAIL",
+        "records_created": 1,
+        "record_closed_verified": false,
+        "problem": "Confirmed creation succeeded exactly once; separate closure preview hit provider errors and closure remains unverified.",
+        "turns": [
+          {
+            "phase": "preview",
+            "response_id": "caresp_0f2d6253304968bb00AZGCGgzrgMYKKACR5D5SSrxPHkHezgqm",
+            "http_status": 200,
+            "http_request_id": "05fb7e5c2f65f030c8abfea7737e0454,05fb7e5c2f65f030c8abfea7737e0454",
+            "tool_calls": 1,
+            "write_calls": 0,
+            "errors": []
+          },
+          {
+            "phase": "confirmed_create",
+            "response_id": "caresp_0f2d6253304968bb00qdDSPuZAM3flSBw3t2o2CYF7oitD095I",
+            "http_status": 200,
+            "http_request_id": "eb2b4e934adb573c3a27241504c308ad,eb2b4e934adb573c3a27241504c308ad",
+            "tool_calls": 1,
+            "write_calls": 1,
+            "errors": []
+          },
+          {
+            "phase": "closure_preview",
+            "response_id": "caresp_0f2d6253304968bb00ZS2Oyc0ah7l2S9unEmpLZYnaVuiab9Ns",
+            "http_status": 200,
+            "http_request_id": "9ebc30708212623c701839d6eba8bb56,9ebc30708212623c701839d6eba8bb56",
+            "tool_calls": 4,
+            "write_calls": 0,
+            "provider_http_status": null,
+            "errors": [{
+              "code": "failure",
+              "mcp_code": -32602,
+              "count": 4,
+              "message": "MCP server 'managed_tools': McpError: MCP error -32602: McpProtocolException encountered while calling tool servicenow_mcp___query/discover: Request failed (remote): [URL redacted]"
+            }]
+          }
+        ]
+      },
+      {
+        "scenario": "adversarial_guard",
+        "status": "PASS",
+        "turns": [{
+          "response_id": "caresp_0fea57ef61a95225006ihLzodphCajFDLJ1dOrPLHVzmdvJZUw",
+          "http_status": 200,
+          "http_request_id": "10a9728fc455de22226f16339c6632e5,10a9728fc455de22226f16339c6632e5",
+          "tool_calls": 1,
+          "write_calls": 0,
+          "errors": []
+        }],
+        "previous_provider_failure": "Provider-blocked before a usable answer; recovered after coordinator restored consent, with a single authorized guard continuation.",
+        "previous_attempt_turns": [{
+          "response_id": "caresp_0f93515891a8392c006iDALl24q35MQThI0gfwO3sPiS6ZmwKV",
+          "http_status": 200,
+          "http_request_id": "17b97c47527c3e04833039a14c8624f0,17b97c47527c3e04833039a14c8624f0",
+          "tool_calls": 1,
+          "write_calls": 0,
+          "provider_http_status": null,
+          "errors": [{
+            "code": "failure",
+            "mcp_code": -32602,
+            "message": "MCP server 'managed_tools': McpError: MCP error -32602: McpProtocolException encountered while calling tool servicenow_mcp___discover: Request failed (remote): [URL redacted]"
+          }]
+        }]
+      }
+    ],
+    "writes_created": [{
+      "table": "incident",
+      "number": "INC0010007",
+      "sys_id": "11a7719dc35c53106001b3fdd401318f",
+      "tag": "SNV3-b10906b1a0",
+      "closed": false
+    }],
+    "authorized_guard_continuations_after_consent_restore": 1
+  },
+  "teams_publication": {
+    "status": "blocked_owned_record_cleanup",
+    "requested_pinned_version": "2",
+    "current_version_selector": "@latest",
+    "endpoint_patch_performed": false,
+    "current_protocols": ["responses"],
+    "current_authorization_schemes": [{"type": "Entra", "isolation_key_source": {"kind": "Entra"}}],
+    "new_bot_name": "bot-servicenow-assistant-v3",
+    "new_bot_deployed": false,
+    "bot_id": null,
+    "title_id": null,
+    "publish_performed": false,
+    "bot_what_if_performed": true,
+    "bot_what_if": {
+      "status": "Succeeded",
+      "changes": [
+        {"resource": "bot-servicenow-assistant-v3", "change_type": "Create"},
+        {"resource": "bot-servicenow-assistant-v3/MsTeamsChannel", "change_type": "Create"}
+      ],
+      "modify_or_delete_count": 0,
+      "legacy_resources": "Ignore"
+    },
+    "additive_bot_bicep_compiled": true,
+    "legacy_adoption_what_if": "Superseded, not applied; no literal no-op was claimed.",
+    "legacy_teams_retirement": "Only after user validation of a separately published V3; not performed."
+  },
+  "previous_staging_runtime_check": {
     "status": "oauth_consent_request",
     "invocations": 2,
     "same_current_user_verified": true,
@@ -93,7 +293,12 @@
     "existing_connections_unchanged": true,
     "production_agent_and_application_unchanged": true,
     "apim_and_container_app_unchanged": true,
-    "root_deployment_and_infra_unchanged": true,
+    "root_azure_yaml_unchanged": true,
+    "infra_applied": false,
+    "additive_v3_bot_source_only": true,
+    "legacy_bot_unchanged": true,
+    "agent_endpoint_publishing_not_performed": true,
+    "teams_app_and_manifest_unchanged": true,
     "project_memory_not_modified": true,
     "rbac_changes_requested": false,
     "manual_permission_grants": false,

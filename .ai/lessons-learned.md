@@ -124,7 +124,42 @@ A Named Value update automatically orphans all stale entries — no purge needed
 
 **Discovery:** The `project-memory` store is shared across agents in the same Foundry project. When creating `servicenow-assistant` in the same project as `salesforce-assistant`, the memory store already existed — no need to recreate.
 
-**Rule:** `create_memory_store()` should always be idempotent (get-or-create). The `user_profile_details` field is set at store creation time and won't update on subsequent calls — if it needs to change, the store must be deleted and recreated.
+**Current rule:** ServiceNow no longer provisions or attaches agent memory. Preserve
+the shared store and its data; never delete/recreate it to update a profile or as
+test cleanup. The original discovery above is historical, not an active deployment instruction.
+
+### 2026-11-01 -- Managed Harness deployment and agent-endpoint publishing
+
+**Discovery:** The prompt-agent azd extension resolves `FOUNDRY_PROJECT_ENDPOINT`;
+`AZURE_AI_PROJECT_ENDPOINT` alone succeeds for Toolbox work but fails agent packaging
+with "missing required fields: projectEndpoint". Inspect the prior working isolated
+environment and fix the local key; do not follow the generic suggestion to run `azd up`.
+
+**Rule:** Teams cannot render MCP approvals. V3 intentionally uses `never` at BOTH
+MCP hops, but exact-action preview plus a subsequent explicit chat confirmation
+remains mandatory for all writes, including adversarial skip-confirmation prompts.
+Pin the inspected skill at both layers and preserve version-bound auth connections.
+
+**Publishing:** Managed Harness agents cannot use the legacy Agent Application's
+Teams route. Use the agent Activity Protocol endpoint and a separate bot whose
+msaAppId matches the agent instance identity, preserve Entra/Responses exactly,
+and pin the E2E-passed immutable version. A failed guard or unverified owned-record
+cleanup does not release a conditional publishing gate; zero writes alone is not
+proof that the agent asked for confirmation.
+
+**Historical adoption investigation:** Minimal legacy channel declarations can
+reset WebChat preview flags. Its provider defaults/NoEffect metadata were not a
+literal no-op and were never applied. That adoption direction is superseded; the
+legacy bot remains unchanged. Persist publish receipts before POST, retain unknown
+delivery, and never solve duplicate publication by automatically bumping versions.
+
+**Runtime assertions:** A request to set a field to its already-current value is
+a legitimate zero-write no-op, not a failed confirmation guard. Accept a refusal,
+clarification/confirmation question or explicit no-op only with zero writes and
+no provider error. Do not weaken confirmation for an actual confirmed create.
+Azure CLI token acquisition rejects simultaneous subscription and tenant
+arguments: pass the explicit subscription and verify the token tenant/current-user
+claims before requests; never fall back to another account.
 
 ### 2026-03-18 -- AI_FOUNDRY_PROJECT_ENDPOINT Not Set by Bicep
 
