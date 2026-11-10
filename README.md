@@ -325,6 +325,14 @@ Required configuration on the ServiceNow instance:
 
 > 💡 **Recommended:** Assign `itil` + `personalize_dictionary` to MCP users. The server gracefully degrades if `personalize_dictionary` is missing.
 
+### 🩺 PDI Health & Keep-Alive
+
+Free developer instances hibernate, have outages and are reclaimed after 10 days without an
+**interactive** login (REST traffic does not count). `.github/workflows/pdi-health.yml` classifies
+the instance every 4 hours (`scripts/pdi_health.py`), keeps a single `pdi-down` issue open while it
+is down and runs a daily headless login as a non-admin keep-alive user (`scripts/pdi_ui_login.py`).
+See [docs/pdi-operations.md](docs/pdi-operations.md) for secrets and recovery.
+
 ---
 
 ## 📖 ServiceNow Encoded Query Syntax

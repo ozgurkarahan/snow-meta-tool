@@ -10,12 +10,20 @@ and ca-sn-mcp SN_INSTANCE_URL with the printed values.
 
 Usage (interactive; admin password is read with getpass, never argv/env/disk):
     python scripts/repair_sn_pdi.py
+    python scripts/repair_sn_pdi.py --keepalive-user        # also ensure the UI keep-alive user
+    python scripts/repair_sn_pdi.py --keepalive-user-only   # only that user (no JWT repair)
+    python scripts/repair_sn_pdi.py --keepalive-user-only --rotate-keepalive-password
+
+The keep-alive user (`pdi.keepalive`, no roles, never admin) is what
+scripts/pdi_ui_login.py signs in with. A generated password is printed ONCE to
+the terminal (never written to disk) for `gh secret set SN_KEEPALIVE_PASSWORD`.
 
 Zurich PDIs may reject REST basic auth for `admin` (HTTP 401 even with the right
 password). In that case sign in to the instance UI and run the same Table API
 calls from that session with the `X-UserToken: g_ck` header (done on 2026-10-31
 for dev330554), then use `verify()` here for the JWT bearer check.
 """
+import argparse
 import getpass
 import json
 import secrets
@@ -48,6 +56,8 @@ APP_FIELDS = {
     "clock_skew": "300",
 }
 SF_SCRIPTS = Path(r"C:\Users\ozgurkarahan\projects\salesforce-meta-tool-id-prop\scripts")
+KEEPALIVE_USER = ("pdi.keepalive", "pdi.keepalive@example.invalid", "PDI", "Keepalive")
+REPO_SLUG = "ozgurkarahan/snow-meta-tool"
 
 
 def fail(msg):
@@ -182,6 +192,56 @@ def ensure_user(c, roles, user_name, email, first, last):
     print(f"[OK] User verified: {email}")
 
 
+def _set_password(c, sys_id, password, create_body=None):
+    # sysparm_input_display_value=true makes ServiceNow hash user_password (raw writes break login)
+    params = {"sysparm_input_display_value": "true"}
+    if create_body is not None:
+        r = c.post("/api/now/table/sys_user", params=params, json={**create_body, "user_password": password})
+    else:
+        r = c.patch(f"/api/now/table/sys_user/{sys_id}", params=params, json={"user_password": password})
+    if r.status_code not in (200, 201):
+        fail(f"{'POST' if create_body is not None else 'PATCH'} sys_user (password) HTTP {r.status_code}")
+    return r.json()["result"]
+
+
+def ensure_keepalive_user(c, rotate=False):
+    """Idempotent: dedicated, role-less, non-admin interactive user for pdi_ui_login.py."""
+    user_name, email, first, last = KEEPALIVE_USER
+    rows = get(c, "sys_user", f"user_name={user_name}",
+               "sys_id,active,locked_out,password_needs_reset", 2)
+    password = None
+    if rows:
+        u = rows[0]
+        if rotate:
+            password = secrets.token_urlsafe(24) + "aA1!"
+            _set_password(c, u["sys_id"], password)
+            print(f"[OK] Keep-alive user password rotated: {user_name}")
+        else:
+            print(f"[OK] Keep-alive user exists: {user_name} (password unchanged; "
+                  "use --rotate-keepalive-password if the GitHub secret is lost)")
+    else:
+        password = secrets.token_urlsafe(24) + "aA1!"
+        u = _set_password(c, None, password, {
+            "user_name": user_name, "email": email, "first_name": first, "last_name": last,
+            "active": "true", "locked_out": "false", "password_needs_reset": "false",
+            "web_service_access_only": "false", "internal_integration_user": "false"})
+        print(f"[OK] Keep-alive user created: {user_name}")
+    fix = {k: v for k, v in (("active", "true"), ("locked_out", "false"), ("password_needs_reset", "false"))
+           if str(u.get(k, v)).lower() != v}
+    if fix:
+        patch(c, "sys_user", u["sys_id"], fix)
+    held = {r["role.name"] for r in get(c, "sys_user_has_role", f"user={u['sys_id']}", "role.name", 200)}
+    if held & {"admin", "security_admin", "maint"}:
+        fail(f"{user_name} holds a privileged role ({', '.join(sorted(held))}); remove it manually")
+    print(f"[OK] Keep-alive user verified (roles: {', '.join(sorted(held)) or 'none'})")
+    if password:
+        print("\n  Store these as GitHub Actions secrets (the password is NOT saved anywhere):")
+        print(f"    gh secret set SN_KEEPALIVE_USER --repo {REPO_SLUG} --body {user_name}")
+        print(f"    gh secret set SN_KEEPALIVE_PASSWORD --repo {REPO_SLUG}   # paste when prompted")
+        print(f"  Password (shown once): {password}\n")
+    del password
+
+
 def verify(instance, client_id, kid, email):
     assertion = tjb._build_jwt(key_path=tjb.CERT_DIR / "sn-jwt-bearer.key", client_id=client_id, kid=kid, sub=email)
     r = httpx.post(f"{instance}/oauth_token.do", timeout=30,
@@ -196,7 +256,15 @@ def verify(instance, client_id, kid, email):
 
 
 def main():
-    instance = (input(f"ServiceNow instance URL [{DEFAULT_INSTANCE}]: ").strip() or DEFAULT_INSTANCE).rstrip("/")
+    parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
+    parser.add_argument("--keepalive-user", action="store_true",
+                        help="Also ensure the dedicated non-admin UI keep-alive user")
+    parser.add_argument("--keepalive-user-only", action="store_true",
+                        help="Only ensure the keep-alive user (skip the JWT bearer repair)")
+    parser.add_argument("--rotate-keepalive-password", action="store_true",
+                        help="Set a new password on an existing keep-alive user")
+    args = parser.parse_args()
+    instance =  (input(f"ServiceNow instance URL [{DEFAULT_INSTANCE}]: ").strip() or DEFAULT_INSTANCE).rstrip("/")
     if not instance.startswith("https://") or not instance.endswith(".service-now.com"):
         fail("Instance must look like https://devNNNNNN.service-now.com")
     admin_user = input("Admin user name [admin]: ").strip() or "admin"
@@ -208,6 +276,11 @@ def main():
         if r.status_code != 200:
             fail(f"Admin access HTTP {r.status_code} (wrong password, or instance hibernating: wake it in the dev portal)")
         print("[OK] Admin access verified")
+        if args.keepalive_user or args.keepalive_user_only:
+            ensure_keepalive_user(c, rotate=args.rotate_keepalive_password)
+        if args.keepalive_user_only:
+            del pw
+            return
         cert_sys_id = ensure_cert(c)
         app = ensure_app(c)
         kid = ensure_verifier(c, app["sys_id"], cert_sys_id)

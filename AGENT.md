@@ -73,6 +73,9 @@ curl /health           # Container App health check
 | `teams-app/` | Generated Teams app package (.zip with manifest + icons) |
 | `scripts/test_jwt_bearer.py` | Automated SN instance setup + JWT Bearer test |
 | `scripts/setup_saml_sso.py` | SAML 2.0 SSO + JIT provisioning setup (Azure AD -> SN) |
+| `scripts/pdi_health.py` | PDI state classifier (UP / HIBERNATING_OR_OFFLINE / RECLAIMED_OR_MISCONFIGURED / NETWORK_ERROR), one JSON line + exit code |
+| `scripts/pdi_ui_login.py` | Playwright interactive login as non-admin `pdi.keepalive` (the only activity that prevents reclamation) |
+| `.github/workflows/pdi-health.yml` | 4-hourly PDI health check, daily UI keep-alive, single `pdi-down` issue; runbook `docs/pdi-operations.md` |
 
 ## Environment Variables
 

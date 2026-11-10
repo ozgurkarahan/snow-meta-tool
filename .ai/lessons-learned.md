@@ -7,6 +7,16 @@ Workflow rules live in `~/.ai/workflow.md` (global) -- do NOT duplicate them her
 
 ## Project-Specific Lessons
 
+### 2026-11-10 -- REST keep-alive pings do not prevent PDI reclamation
+
+**Mistake:** Documented `scripts/keepalive_ping.py` (JWT bearer + Table API read) as "authenticated activity" that keeps the PDI alive, and lost hours telling 502 `snow_adc` apart from 401 `access_denied` by hand.
+
+**Root cause:** ServiceNow KB3140725 (Oct 2026): only an explicit interactive login to the PDI itself counts against the 10-day reclamation. REST/API, integrations, scheduled jobs and developer-portal logins do not.
+
+**Rule:**
+- Use `scripts/pdi_health.py` / `.github/workflows/pdi-health.yml` to *detect* state; use `scripts/pdi_ui_login.py` (non-admin `pdi.keepalive`) as the only reclamation keep-alive.
+- 502 `snow_adc` = hibernating or ServiceNow outage (portal "Offline", no Wake): wake or wait, never repair. 401 from `oauth_token.do` on a reachable instance = reclaimed: run `repair_sn_pdi.py`.
+
 ### 2026-05-18 -- PDI Migration & Cache Invalidation Strategy
 
 **Mistake:** Created a new ServiceNow PDI (`dev300704`) before reactivating the hibernated old one (`dev194081`). Creating a new PDI on the same dev portal account **automatically releases the previous PDI back to the shared pool** — even if it's still hibernating and reachable, you no longer own it.

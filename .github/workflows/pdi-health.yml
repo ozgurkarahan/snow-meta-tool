@@ -1,0 +1,121 @@
+# ServiceNow PDI health check + interactive-login keep-alive.
+# Runbook: docs/pdi-operations.md. Scheduled runs only fire from the default branch.
+name: PDI health
+
+on:
+  schedule:
+    - cron: "23 */4 * * *" # health check every 4 hours
+    - cron: "47 7 * * *"   # daily: health check + interactive-login keep-alive
+  workflow_dispatch:
+    inputs:
+      ui_login:
+        description: "Also run the interactive-login keep-alive (only if the PDI is reachable)"
+        type: boolean
+        default: false
+
+permissions: {}
+
+concurrency:
+  group: pdi-health
+  cancel-in-progress: false
+
+jobs:
+  health:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: read
+      issues: write
+    steps:
+      - name: Check configuration
+        id: cfg
+        env:
+          SN_INSTANCE_URL: ${{ secrets.SN_INSTANCE_URL }}
+          SN_KEEPALIVE_USER: ${{ secrets.SN_KEEPALIVE_USER }}
+          SN_KEEPALIVE_PASSWORD: ${{ secrets.SN_KEEPALIVE_PASSWORD }}
+        run: |
+          if [ -n "$SN_INSTANCE_URL" ]; then echo "configured=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "configured=false" >> "$GITHUB_OUTPUT"
+            echo "::notice::SN_INSTANCE_URL secret not set; PDI health check skipped."
+          fi
+          if [ -n "$SN_KEEPALIVE_USER" ] && [ -n "$SN_KEEPALIVE_PASSWORD" ]; then
+            echo "keepalive=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "keepalive=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Checkout
+        if: steps.cfg.outputs.configured == 'true'
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Set up Python
+        if: steps.cfg.outputs.configured == 'true'
+        uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
+        with:
+          python-version: "3.12"
+
+      - name: Install dependencies
+        if: steps.cfg.outputs.configured == 'true'
+        run: python -m pip install --disable-pip-version-check -q -r requirements.txt
+
+      - name: Classify PDI health
+        id: health
+        if: steps.cfg.outputs.configured == 'true'
+        env:
+          SN_INSTANCE_URL: ${{ secrets.SN_INSTANCE_URL }}
+          SN_CLIENT_ID: ${{ secrets.SN_CLIENT_ID }}
+          SN_KID: ${{ secrets.SN_KID }}
+          SN_SUB: ${{ secrets.SN_SUB }}
+          SN_JWT_PRIVATE_KEY: ${{ secrets.SN_JWT_PRIVATE_KEY }}
+        run: |
+          set +e
+          python scripts/pdi_health.py --output "$RUNNER_TEMP/pdi-health.json"
+          code=$?
+          set -e
+          case "$code" in
+            0|10|11|12|13|20) ;;
+            *) echo "::error::pdi_health.py crashed (exit $code)"; exit "$code" ;;
+          esac
+          state=$(python -c "import json,sys; print(json.load(open(sys.argv[1]))['state'])" "$RUNNER_TEMP/pdi-health.json")
+          reachable=$(python -c "import json,sys; print(str(json.load(open(sys.argv[1]))['reachable']).lower())" "$RUNNER_TEMP/pdi-health.json")
+          echo "state=$state" >> "$GITHUB_OUTPUT"
+          echo "reachable=$reachable" >> "$GITHUB_OUTPUT"
+          echo "### ServiceNow PDI: \`$state\`" >> "$GITHUB_STEP_SUMMARY"
+          if [ "$state" != "UP" ] && [ "$state" != "NOT_CONFIGURED" ]; then
+            echo "::warning::ServiceNow PDI state is $state (see the pdi-down issue)"
+          fi
+
+      - name: Open, update or close the pdi-down issue
+        if: steps.health.outputs.state != ''
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: >-
+          python scripts/pdi_issue.py
+          --result "$RUNNER_TEMP/pdi-health.json"
+          --repo "$GITHUB_REPOSITORY"
+          --run-url "$GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID"
+
+      # Gated on reachability, not UP: wrong JWT secrets must not stop the only anti-reclamation activity.
+      - name: Interactive-login keep-alive (daily)
+        if: >-
+          steps.health.outputs.reachable == 'true' &&
+          (github.event.schedule == '47 7 * * *' || inputs.ui_login) &&
+          steps.cfg.outputs.keepalive == 'true'
+        env:
+          SN_INSTANCE_URL: ${{ secrets.SN_INSTANCE_URL }}
+          SN_KEEPALIVE_USER: ${{ secrets.SN_KEEPALIVE_USER }}
+          SN_KEEPALIVE_PASSWORD: ${{ secrets.SN_KEEPALIVE_PASSWORD }}
+        run: |
+          python -m pip install --disable-pip-version-check -q "playwright==1.58.0"
+          python -m playwright install --with-deps chromium > /dev/null
+          python scripts/pdi_ui_login.py
+
+      - name: Keep-alive not configured
+        if: >-
+          steps.health.outputs.reachable == 'true' &&
+          (github.event.schedule == '47 7 * * *' || inputs.ui_login) &&
+          steps.cfg.outputs.keepalive != 'true'
+        run: echo "::notice::SN_KEEPALIVE_USER / SN_KEEPALIVE_PASSWORD not set; interactive-login keep-alive skipped (the PDI can still be reclaimed after 10 idle days)."
