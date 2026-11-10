@@ -201,13 +201,19 @@ Or in the Foundry portal → project → Evaluations → ContinuousEval-servicen
 
 ## Hibernation Prevention (dev330554)
 
-PDIs auto-hibernate after ~10 days of inactivity. To keep dev330554 awake:
+**Correction (KB3140725, Oct 2026):** only an interactive login to the PDI itself counts
+against the 10-day reclamation. REST/Table API traffic (including `keepalive_ping.py`),
+integrations, scheduled jobs and developer-portal logins do NOT. Runbook:
+`docs/pdi-operations.md`.
 
-- **Script**: `scripts/keepalive_ping.py` — signs a JWT Bearer assertion (using `certs/sn-jwt-bearer.key` + `certs/sn-oauth-config.json`), exchanges it at `/oauth_token.do`, then calls Table API. Counts as authenticated activity.
-- **Schedule**: Copilot CLI `manage_schedule` #1 — fires every 1 day, invokes the script. View/manage via `manage_schedule action=list|stop`.
-- **Why every 1d (not 5d)**: Copilot's `manage_schedule` caps interval at `1d`. Daily is well under the 10-day hibernation window, so it's a safe upper bound.
-- **Manual run**: `python scripts/keepalive_ping.py --quiet` from repo root.
-- **If the schedule lapses** (machine off for 10+ days): instance hibernates → must be woken via developer.servicenow.com.
+- **Detection**: `.github/workflows/pdi-health.yml` runs `scripts/pdi_health.py` every 4h
+  (states `UP` / `HIBERNATING_OR_OFFLINE` / `RECLAIMED_OR_MISCONFIGURED` / `NETWORK_ERROR`)
+  and keeps a single `pdi-down` issue open while not UP.
+- **Reclamation keep-alive**: the same workflow runs `scripts/pdi_ui_login.py` (headless
+  Playwright login as the non-admin `pdi.keepalive` user) once a day when reachable.
+- **`scripts/keepalive_ping.py`**: JWT bearer + 1-row incident read; verifies the auth
+  path only. Shared JWT code lives in `scripts/sn_jwt.py`.
+- **Hibernation** (502 `snow_adc`) still needs a manual wake via developer.servicenow.com.
 
 **Skipped evaluators (deliberate)**:
 - `groundedness` / `groundedness_pro` — agent grounds in live Table API results, not retrievable docs
